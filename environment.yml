@@ -1,0 +1,27 @@
+# conda env create -f environment.yml
+name: ulmRBM
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # actually needed
+  - python=3.12
+  - numpy
+  - scipy
+  - fenics-dolfinx=0.10
+  - mpich
+  - pip
+  - pip:
+      - -e .
+  # for testing
+  - pytest
+  - pytest-cov
+  # for performance
+  - mkl
+  - blas=*=*mkl
+  # for documentation
+  - sphinx
+  - pydata-sphinx-theme
+  # for plotting
+  - matplotlib
+  - pyvista

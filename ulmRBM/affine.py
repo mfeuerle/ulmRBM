@@ -1,0 +1,724 @@
+"""
+Affine decomposition classes for parametric problems.
+
+Affine Classes
+--------------
+.. autosummary::
+   :toctree: generated/
+   
+    AffineList
+    AffineObject
+    AffineLinear
+    AffineNonlinear
+    
+Wrapper Utilities
+-----------------
+.. autosummary::
+    :toctree: generated/
+    
+    wrap_affinelinear
+"""
+
+
+from __future__ import annotations
+
+
+__all__ = [
+    'AffineList',
+    'AffineObject',
+    'AffineLinear',
+    'AffineNonlinear',
+    'wrap_affinelinear'
+]
+
+from numbers import Number
+from typing import Generic
+from collections.abc import Iterable, MutableSequence, Callable
+from enum import IntEnum
+
+from .core import Mu, Data, ParametricObject, ParametricLinear, TrivialParametric, wrap_scalar, unwrap
+
+
+class _ScaledScalar(ParametricObject[Mu, float]):
+    def __init__(self, scale: float, scalar: ParametricObject[Mu, float]):
+        if isinstance(scalar, _ScaledScalar):
+            scale = scale * scalar.scale
+            scalar = scalar.scalar
+        self.scale = scale
+        self.scalar = scalar
+        
+    def __call__(self, mu: Mu) -> float:
+        return self.scale * self.scalar(mu)
+    
+def _multiply_scalar(scalar1: ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu] | float,
+                     scalar2: ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu] | float) -> ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu]:
+    
+    scalar1 = unwrap(scalar1)
+    scalar2 = unwrap(scalar2)
+    
+    if scalar1 == 0.0 or scalar2 == 0.0:
+        return wrap_scalar(0.0)
+    if scalar1 == 1.0:
+        return wrap_scalar(scalar2)
+    if scalar2 == 1.0:
+        return wrap_scalar(scalar1)
+    
+    if isinstance(scalar1, Number):
+        if isinstance(scalar2, Number):
+            return wrap_scalar(scalar1 * scalar2)
+        else:
+            return _ScaledScalar(scalar1, scalar2)
+    elif isinstance(scalar2, Number):
+        return _ScaledScalar(scalar2, scalar1)
+    else:
+        return lambda mu, s1=scalar1, s2=scalar2: s1(mu) * s2(mu)
+
+class _ConstructNew(IntEnum):
+    SAME = 0
+    MATMUL = 1
+    MUL = 2
+    APPLY2DATA = 3
+
+class AffineList(Generic[Mu], MutableSequence):
+    r"""
+    List of parameter dependent scalar functions and parameter independent data terms.
+    
+    An affine object, consisting of a list of parameter dependent scalar functions :math:`\theta_1(\mu),\dots,\theta_Q(\mu)` and parameter independent data terms :math:`\text{data}_1,\dots,\text{data}_Q`.
+    
+    This class behaves like a list of ``(theta, data)`` tuples and implements the 
+    ``MutableSequence`` protocol, supporting indexing, slicing, iteration, insertion, and deletion.
+    """
+    
+    __array_priority__ = 100.0
+    """Priority for NumPy to defer to our __r*__ methods."""
+    
+    __sparse_priority__ = 100.0
+    """Priority for scipy.sparse to defer to our ``__r*__`` methods (via patch in :mod:`myrbm`)."""
+    
+    __linop_priority__ = 100.0
+    """Priority for :mod:`scipy.sparse.linalg.LinearOperator` to defer to our ``__r*__`` methods (via patch in :mod:`myrbm`)."""
+    
+    __kron_priority__ = 100.0
+    """Priority over the https://github.com/mfeuerle/kron module to defer to our ``__r*__`` methods."""
+    
+    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineList[Mu] | Iterable[tuple[ParametricObject[Mu, float], any]] = [], data: list = []):
+        r"""
+        Args:
+            theta :
+                List of parameter-dependent coefficient functions. Each function should accept a 
+                parameter value and return a scalar coefficient. Alternatively, an :class:`AffineList` can be provided, in which case its ``theta`` and ``data`` attributes are used, or a iterable of ``(theta, data)`` tuples.
+            data :
+                List of parameter-independent data terms, or empty if ``theta`` is an :class:`AffineList` or iterable.
+        """
+        
+        if not data:
+            if isinstance(theta, AffineList):
+                data  = theta.data
+                theta = theta.theta
+            else:
+                data = [t[1] for t in theta]
+                theta = [t[0] for t in theta]
+                
+        if len(theta) != len(data):
+            raise ValueError("Length of theta and data must be the same.")
+        
+        self.theta: list[ParametricObject[Mu, float]] = [wrap_scalar(t) for t in theta]
+        """List of parameter-dependent coefficient functions."""
+        self.data: list = [d for d in data]
+        """List of parameter-independent data terms."""
+        
+    def __repr__(self):
+        return f"<{self.__class__.__name__} with {len(self)} terms>"
+        
+    def _construct_new(self, theta, data, type: _ConstructNew = _ConstructNew.SAME) -> AffineList[Mu]:
+        """Fine controll construction of new AffineList objects for operations."""
+        return self.__class__(theta, data)
+        
+        
+    def __getitem__(self, key: int | slice) -> tuple[ParametricObject[Mu, float], any] | AffineList[Mu]:
+        r"""
+        Get item(s) by index or slice.
+        
+        Args:
+            key :
+                Index or slice to retrieve.
+            
+        Returns:
+            If ``key`` is an integer, returns a tuple ``(theta[key], data[key])``.
+            If ``key`` is a slice, returns a new ``AffineList`` with the sliced terms.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2, lambda mu: 1.0]
+        >>> data = [1.0, 2.0, 3.0]
+        >>> ad = AffineList(theta, data)
+        >>> theta_0, data_0 = ad[0]  # Get first term
+        >>> sliced = ad[1:]  # Slice returns new AffineList
+        >>> len(sliced)
+        2
+        """
+        if isinstance(key, int):
+            return (self.theta[key], self.data[key])
+        return self._construct_new(self.theta[key], self.data[key])
+    
+    
+    def __setitem__(self, key: int | slice, value: AffineList[Mu] | tuple[ParametricObject[Mu, float], any] | Iterable[tuple[ParametricObject[Mu, float], any]]):
+        r"""
+        Set item(s) by index or slice.
+        
+        Args:
+            key :
+                Index or slice to set.
+            value :
+                For integer index: a tuple ``(theta, data)``, a list ``[(theta, data)]`` or an ``AffineList``of length 1. 
+                For slice: an ``AffineList`` or a list of ``(theta, data)`` tuples.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [1.0, 2.0]
+        >>> ad = AffineList(theta, data)
+        >>> ad[0] = (lambda mu: 2*mu, 5.0)  # Set single term
+        >>> ad[0:2] = [(lambda mu: mu**3, 10.0), (lambda mu: 1.0, 20.0)]  # Set slice with list of tuples
+        """
+        
+        if isinstance(value, AffineList):
+            theta = value.theta
+            data = value.data
+        else:
+            if isinstance(key, int) and len(value) == 2:
+                theta = [value[0]]
+                data = [value[1]]
+            else:
+                theta = [v[0] for v in value]
+                data = [v[1] for v in value]
+                
+        if isinstance(key, int):
+            if len(theta) != 1:
+                raise ValueError("When setting a single element, value must be a single (theta, data) tuple or AffineList of length 1.")
+            self.theta[key] = theta[0]
+            self.data[key] = data[0]
+        else:                
+            self.theta[key] = theta
+            self.data[key] = data
+        
+    def __delitem__(self, key: int | slice):
+        r"""
+        Delete item(s) by index or slice.
+        
+        Args:
+            key :
+                Index or slice to delete.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2, lambda mu: 1.0]
+        >>> data = [1.0, 2.0, 3.0]
+        >>> ad = AffineList(theta, data)
+        >>> del ad[1]  # Delete second term
+        >>> len(ad)
+        2
+        """
+        del self.theta[key]
+        del self.data[key]
+        
+    def __len__(self) -> int:
+        r"""
+        Return the number of terms in the affine list.
+        
+        Returns:
+            Number of terms :math:`Q` in the list.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [1.0, 2.0]
+        >>> ad = AffineList(theta, data)
+        >>> len(ad)
+        2
+        """
+        return len(self.data)
+    
+    def __iter__(self) -> zip[ParametricObject[Mu, float], any]:
+        r"""
+        Iterate over ``(theta, data)`` pairs.
+        
+        Yields
+        ------
+            Pairs of ``(theta_q, data_q)`` for each term in the list.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [1.0, 2.0]
+        >>> ad = AffineList(theta, data)
+        >>> for theta_q, data_q in ad:
+        ...     print(theta_q(2.0), data_q)
+        2.0 1.0
+        4.0 2.0
+        """
+        return zip(self.theta, self.data)
+    
+    def insert(self, index: int, value: tuple[ParametricObject[Mu, float], any]):
+        r"""
+        Insert a new term at a given position.
+        
+        Args:
+            index :
+                Position at which to insert the new term.
+            value :
+                A tuple ``(theta, data)`` representing the term to insert.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [1.0, 2.0]
+        >>> ad = AffineList(theta, data)
+        >>> ad.insert(1, (lambda mu: 2*mu, 5.0))
+        >>> len(ad)
+        3
+        >>> ad[1][1]  # Data of inserted term
+        5.0
+        """
+        self.theta.insert(index, wrap_scalar(value[0]))
+        self.data.insert(index, value[1])
+    
+    def __add__(self, other: AffineList[Mu] | Iterable[tuple[ParametricObject[Mu, float], any]]) -> AffineList[Mu]:
+        r"""
+        Add object to this affine decomposition.
+        
+        Concatenates two decompositions:
+        
+        .. math::
+            \sum_{q=1}^{Q_1} \theta_q(\mu) \cdot \text{data}_q + 
+            \sum_{q=1}^{Q_2} \tilde{\theta}_q(\mu) \cdot \tilde{\text{data}}_q
+        
+        
+        Args:
+            other :
+                Either another :class:`AffineList` or a iterable of ``(theta,data)`` tuples.
+        
+        Returns:
+            A new :class:`AffineList` with the combined terms.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [1.0, 2.0]
+        >>> ad = AffineList(theta, data)
+        >>> ad2 = ad + 5.0
+        >>> len(ad2)
+        3
+        >>> ad2(1.0)  # 1*1 + 1*2 + 5 = 8
+        8.0
+        """
+        if isinstance(other, AffineList):
+            theta = other.theta
+            data  = other.data
+        elif other == 0:
+            theta = []
+            data = []
+        else:
+            theta = [d[0] for d in other]
+            data  = [d[1] for d in other]
+        return self._construct_new(self.theta + theta, self.data + data)
+    
+    __radd__ = __add__
+    __radd__.__doc__ = __add__.__doc__
+    
+    add = __add__
+    add.__doc__ = __add__.__doc__
+    
+    def __neg__(self) -> AffineList[Mu]:
+        r"""
+        Negation of the affine decomposition.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [1.0, 2.0]
+        >>> ad = AffineList(theta, data)
+        >>> ad_neg = -ad
+        >>> ad_neg(2.0)  # -(2*1 + 4*2) = -10
+        -10.0
+        """
+            
+        neg_theta = []
+        for theta_i in self.theta:
+            neg_theta.append(_multiply_scalar(-1.0, theta_i))
+        return self._construct_new(neg_theta, self.data)
+    
+    def __sub__(self, other: AffineList[Mu] | Iterable[tuple[ParametricObject[Mu, float], any]]):    # self - other
+        return -( (-self) + other )
+
+    def __rsub__(self, other: AffineList[Mu] | Iterable[tuple[ParametricObject[Mu, float], any]]):   # other - self
+        return (-self) + other
+        
+    
+    def compress(self) -> AffineList[Mu]:
+        r"""
+        Compress the affine decomposition by combining constant terms.
+        
+        All terms with  constant coefficients are combined into a single term, 
+        reducing the total number of terms in the decomposition.
+        
+        Returns:
+            A new :class:`AffineList` with constant terms merged.
+            
+        Examples
+        --------
+        >>> theta = [2.0, lambda mu: mu, 3.0]
+        >>> data = [1.0, 2.0, 1.0]
+        >>> ad = AffineList(theta, data)
+        >>> len(ad)
+        3
+        >>> len(ad.compress()) # Two constant terms combined
+        2
+        """
+        constant_data = None
+        new_theta = []
+        new_data = []
+        
+        for theta_q, data_q in self:
+            if isinstance(theta_q, TrivialParametric):
+                if constant_data is None:
+                    constant_data = theta_q.data * data_q
+                else:
+                    constant_data += theta_q.data * data_q
+            else:
+                new_theta.append(theta_q)
+                new_data.append(data_q)
+        
+        if constant_data is not None:
+            new_theta.insert(0, 1.0)
+            new_data.insert(0, constant_data)
+        
+        return self._construct_new(new_theta, new_data)
+    
+    def apply2data(self, func: Callable[[any], any]) -> AffineList[Mu]:
+        r"""
+        Apply a function to each data term in the decomposition and return
+        a new affine object with the transformed data but same theta.
+        
+        Args:
+            func :
+                Function to apply to each data term.
+        
+        Returns:
+            A new :class:`AffineList` with the transformed data terms.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [1.0, 2.0]
+        >>> ad = AffineList(theta, data)
+        >>> ad_squared = ad.apply2data(lambda d: d**2)
+        >>> ad_squared(2.0)  # 2*1^2 + 4*2^2 = 18
+        18.0
+        """
+        new_data = [func(d) for d in self.data]
+        return self._construct_new(self.theta, new_data, _ConstructNew.APPLY2DATA)
+    
+class AffineObject(AffineList[Mu], ParametricObject[Mu, Data]):
+    r"""
+    An affine decomposition of a parametric object.
+
+    Can be evaluated at a parameter value :math:`\mu` to compute the value of the affine decomposition at that parameter, i.e.,
+    
+    .. math::
+        \text{data}(\mu) = \sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q,
+        
+    where :math:`\mu` is a parameter of type ``Mu``, and :math:`\text{data}(\mu)` is an object of type ``Data``.
+    """
+    
+    def __call__(self, mu: Mu) -> Data:
+        r"""
+        Evaluate the affine decomposition at a parameter value.
+        
+        Computes :math:`\sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q`.
+        
+        Args:
+            mu :
+                Single parameter value at which to evaluate the coefficient functions.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [1.0, 2.0]
+        >>> ad = AffineObject(theta, data)
+        >>> ad(3.0)  # 3*1 + 9*2 = 21
+        21.0
+        """
+        val = 0
+        for theta_q, data_q in self:
+            val += theta_q(mu) * data_q
+        return val
+    
+
+class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
+    r"""
+    An affine decomposition of a parametric linear object (e.g. a matrix or vector).
+    
+    Can be evaluated at a parameter value :math:`\mu` to compute the value of the affine decomposition at that parameter, i.e.,
+    
+    .. math::
+        \text{data}(\mu) = \sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q,
+        
+    where :math:`\mu` is a parameter of type ``Mu``, and :math:`\text{data}(\mu)` is a linear object of type ``Data``, e.g. a matrix or vector.
+    
+    Supports basic linear algebra operations, such as matrix-matrix or matrix-vector multiplication.
+    """
+    
+    _T: AffineLinear[Mu, Data] | None = None
+    """Cached transpose."""
+    
+    
+    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineList[Mu] | Iterable = [], data: list = []):
+        r"""
+        Args:
+            theta :
+                List of parameter-dependent coefficient functions. Each function should accept a 
+                parameter value and return a scalar coefficient. Alternatively, an :class:`AffineList` can be provided, in which case its ``theta`` and ``data`` attributes are used. Alternatively, an iterable of alternating ``(theta, data)`` entries can be provided.
+            data :
+                List of parameter-independent data terms. Or empty if ``theta`` is an :class:`AffineList` or iterable. Do not have to be of the same type, but, if added up, must return an object of type ``Data``. Should support ``*``- and ``@``-multiplication for element-wise- and matrix-multiplication, as well as the ``.T`` attribute for the transposed.
+        """
+        super().__init__(theta, data)
+        if len(self) != 0:
+            shape = self.data[0].shape
+            for d in self.data:
+                if d.shape != shape:
+                    raise ValueError("All data must have the same shape.")
+            self.shape = shape
+        else:
+            self.shape = None
+            
+    def __repr__(self):
+        return f"<{self.__class__.__name__} of shape {self.shape} with {len(self)} terms>"
+            
+    def insert(self, index: int, value: tuple[ParametricObject[Mu, float], Data]):
+        super().insert(index, value)
+        if self.shape is None:
+            self.shape = value[1].shape
+        elif value[1].shape != self.shape:
+            raise ValueError("Inserted data must have the same shape.")
+        self._T = None  # Invalidate cached transpose
+
+        
+    @property
+    def T(self) -> AffineLinear[Mu, Data]:
+        r"""
+        Transpose of the affine linear object.
+        """
+        if self._T is None:
+            transposed_data = [d.T for d in self.data]
+            self._T = self._construct_new(self.theta, transposed_data)
+        return self._T
+    
+    def transpose(self) -> AffineLinear[Mu, Data]:
+        return self.T
+    transpose.__doc__ = T.__doc__  
+    
+    def __mul__[Data2, Data3](self, other: AffineLinear[Mu, Data2] | Data2) -> AffineLinear[Mu, Data3]:
+        r"""
+        ``*``-multiplication with another object.
+        
+        If ``other`` is an :class:`AffineLinear`, this creates a new
+        decomposition with :math:`Q_1 \cdot Q_2` terms by combining each term
+        of ``self`` with each term of ``other``:
+        
+        .. math::
+            \sum_{q_1=1}^{Q_1} \sum_{q_2=1}^{Q_2} 
+            \theta_{q_1}(\mu) \cdot \theta_{q_2}(\mu) \cdot 
+            \text{data}_{q_1} * \text{data}_{q_2}
+        
+        If ``other`` is not an :class:`AffineDecomposition`, it applies
+        ``*``-multiplication to each data term:
+        
+        .. math::
+            \sum_{q=1}^{Q} \theta_q(\mu) \cdot (\text{data}_q * \text{other})
+        
+        Args:
+            other :
+                Either another :class:`AffineLinear` or a compatible
+                data object for ``*``-multiplication.
+        
+        Returns:
+            A new :class:`AffineLinear` with the multiplied terms. Thereby, the type ``Data3`` is the result type of the ``*``-multiplication between ``Data`` and ``Data2``.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [2.0, 3.0]
+        >>> ad = AffineLinear(theta, data)
+        >>> ad2 = ad * 2.0
+        >>> ad2(1.0)  # (1*4.0) + (1*6.0) = 10.0
+        10.0
+        """
+        if isinstance(other, AffineLinear):
+            new_theta = []
+            new_data = []
+            for theta_i, data_i in self:
+                for theta_j, data_j in other:
+                    new_theta.append(_multiply_scalar(theta_i, theta_j))
+                    new_data.append(data_i * data_j)
+            return self._construct_new(new_theta, new_data, _ConstructNew.MUL)
+        else:
+            new_data = [d * other for d in self.data]
+            return self._construct_new(self.theta, new_data, _ConstructNew.MUL)
+    
+    def __rmul__[Data2, Data3](self, other: Data2) -> AffineLinear[Mu, Data3]:
+        r"""
+        Right ``*``-multiplication with a non-parametric object.
+        
+        Applies ``*``-multiplication from the left to each data term:
+        
+        .. math::
+            \sum_{q=1}^{Q} \theta_q(\mu) \cdot (\text{other} * \text{data}_q)
+        
+        Args:
+            other :
+                A compatible data object for ``*``-multiplication.
+        
+        Returns:
+            A new :class:`AffineLinear` with the multiplied terms. Thereby, the type ``Data3`` is the result type of the ``*``-multiplication between ``Data`` and ``Data2``.
+        """
+        new_data = [other * d for d in self.data]
+        return self._construct_new(self.theta, new_data, _ConstructNew.MUL)
+    
+    multiply = __mul__
+    multiply.__doc__ = __mul__.__doc__
+    
+    def __matmul__[Data2, Data3](self, other: AffineLinear[Mu, Data2] | Data2) -> AffineLinear[Mu, Data3]:
+        r"""
+        ``@``-multiplication with another object.
+        
+        If ``other`` is an :class:`AffineLinear`, this creates a new
+        decomposition with :math:`Q_1 \cdot Q_2` terms by combining each term
+        of ``self`` with each term of ``other``:
+        
+        .. math::
+            \sum_{q_1=1}^{Q_1} \sum_{q_2=1}^{Q_2} 
+            \theta_{q_1}(\mu) \cdot \theta_{q_2}(\mu) \cdot 
+            \text{data}_{q_1} @ \text{data}_{q_2}
+        
+        If ``other`` is not an :class:`AffineLinear`, it applies
+        ``@``-multiplication to each data term:
+        
+        .. math::
+            \sum_{q=1}^{Q} \theta_q(\mu) \cdot (\text{data}_q @ \text{other})
+        
+        Args:
+            other :
+                Either another :class:`AffineLinear` or a compatible
+                data object for ``@``-multiplication.
+        
+        Returns:
+            A new :class:`AffineLinear` with the multiplied terms. Thereby, the type ``Data3`` is the result type of the ``@``-multiplication between ``Data`` and ``Data2``.
+            
+        Examples
+        --------
+        >>> import numpy as np
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [np.eye(2), 2*np.eye(2)]
+        >>> ad = AffineLinear(theta, data)
+        >>> v = np.array([1.0, 2.0])
+        >>> result = ad @ v
+        >>> np.allclose(result(1.0), 3*v)  # (1*I + 1*2I) @ v = 3*v
+        True
+        """
+        if isinstance(other, AffineLinear):
+            new_theta = []
+            new_data = []
+            for theta_i, data_i in self:
+                for theta_j, data_j in other:
+                    new_theta.append(_multiply_scalar(theta_i, theta_j))
+                    new_data.append(data_i @ data_j)
+            return self._construct_new(new_theta, new_data, _ConstructNew.MATMUL)
+        else:
+            new_data = [d @ other for d in self.data]
+            return self._construct_new(self.theta, new_data, _ConstructNew.MATMUL)
+    
+    def __rmatmul__[Data2, Data3](self, other: Data2) -> AffineLinear[Mu, Data3]:
+        r"""
+        Right ``@``-multiplication with a non-parametric object.
+        
+        Applies ``@``-multiplication from the left to each data term:
+        
+        .. math::
+            \sum_{q=1}^{Q} \theta_q(\mu) \cdot (\text{other} @ \text{data}_q)
+        
+        Args:
+            other :
+                A compatible data object for ``@``-multiplication.
+        
+        Returns:
+            A new :class:`AffineLinear` with the multiplied terms. Thereby, the type ``Data3`` is the result type of the ``@``-multiplication between ``Data`` and ``Data2``.
+        """
+        new_data = [other @ d for d in self.data]
+        return self._construct_new(self.theta, new_data, _ConstructNew.MATMUL)
+    
+    matmul = __matmul__
+    matmul.__doc__ = __matmul__.__doc__
+    
+    rmatmul = __rmatmul__
+    rmatmul.__doc__ = __rmatmul__.__doc__
+    
+    
+class AffineNonlinear(AffineList[Mu], ParametricObject[Mu, Callable]):
+    r"""
+    An affine decomposition of a parametric nonlinear object.
+    
+    Can be evaluated at a parameter value :math:`\mu` to compute the value of the affine decomposition at that parameter, i.e.,
+    
+    .. math::
+        \text{data}(\mu) = \sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q,
+        
+    where :math:`\mu` is a parameter of type ``Mu``, and :math:`\text{data}(\mu)` is a non-linear object, i.e. a function.
+    """
+    
+    def __call__(self, mu: Mu) -> Callable:
+        r"""
+        Evaluate the affine decomposition at a parameter value.
+        
+        Computes :math:`\sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q`.
+        
+        Args:
+            mu :
+                Single parameter value at which to evaluate the coefficient functions.
+        """
+        def func(*args, **kwargs):
+            val = self.theta[0](mu) * self.data[0](*args, **kwargs)
+            for theta_q, data_q in zip(self.theta[1:], self.data[1:]):
+                val += theta_q(mu) * data_q(*args, **kwargs)
+            return val
+        return func
+    
+    
+def wrap_affinelinear(data: Data | AffineLinear[Mu, Data]) -> AffineLinear[Mu, Data]:
+    r"""
+    Wrap a data object into an :class:`AffineLinear` with a single constant term.
+    
+    If the input is already an :class:`AffineLinear`, it is returned unchanged.
+    
+    Args:
+        data :
+            A data object or an :class:`AffineLinear`.
+    
+    Returns:
+        An :class:`AffineLinear` representing the input data.
+        
+    Examples
+    --------
+    >>> import numpy as np
+    >>> A = np.array([[1.0, 2.0], [3.0, 4.0]])
+    >>> aff_A = wrap_affinelinear(A)
+    >>> aff_A(0.5)  # Constant affine linear returns the same matrix
+    array([[1., 2.],
+           [3., 4.]])
+    """
+    if isinstance(data, AffineLinear):
+        return data
+    elif isinstance(data, AffineList):
+        return AffineLinear(data)
+    else:
+        return AffineLinear([1.0], [data])

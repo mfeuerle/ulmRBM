@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ulmRBM"
+version = "0.1"
+description = "Reduced Basis Methods for Parametrized Partial Differential Equations"
+authors = [{ name = "Moritz Feuerle (Ulm University)" }]
+requires-python = ">=3.12"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ulmRBM*"]
+
+[tool.setuptools.package-dir]
+"" = "."
