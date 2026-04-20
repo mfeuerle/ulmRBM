@@ -31,78 +31,16 @@ from mpi4py import MPI
 from dolfinx import mesh, fem
 import ufl
 
-from ulmRBM.core import NO_MU
 from ulmRBM.affine import AffineList, AffineObject, AffineLinear
-from ulmRBM.fenicsx import utils, AffineDirichletBC, free_dofs
-
-
-class FEniCSxSpaceWithDirichletBCs:
-    r""" Combination of a FEniCSx FunctionSpace and boundary conditions.
-    """
-    def __init__(self, space: fem.FunctionSpace, bcs: list[AffineDirichletBC], warn: bool = True):
-        r"""
-        Args:
-            space:
-                Function space to be wrapped.
-            bcs:
-                List of dirichlet boundary conditions.
-            warn:
-                Whether to warn, if there are dofs set by multiple boundary conditions.
-        """
-        
-        self.space: fem.FunctionSpace = space
-        "Function space"
-        self.dim: int = space.dofmap.index_map.size_global
-        "Dimension of the space (number of free + restricted dofs)."
-        self.bcs: list[AffineDirichletBC] = bcs
-        "List of all dirichlet boundary conditions of this space."
-        self.dofs: np.ndarray[bool] = free_dofs(bcs, warn=warn) if len(bcs) > 0 else np.ones(self.dim, dtype=bool)
-        "Boolean array of the free dofs (True if free, False if restricted by a dirichlet boundary condition)."
-        self._ndofs = sum(self.dofs)
-        "Total number of free dofs."
-        
-    def __repr__(self):
-        return f"<{self.__class__.__name__} of dim={self.dim} and {self._ndofs} free dofs>"
-        
-    def set_dirichletbcs(self, mu, u: np.ndarray | fem.Function):
-        r""" Insert the dirichlet boundary conditions into a given vector.
-        
-        Args:
-            mu:
-                Parameter value, at which the boundary conditions should be evaluated.
-            u:
-                Vector (or FEniCS function) containing the values at the free dofs, to which the dirichlet boundary conditions should be added. Can either have length equal to the total number of dofs (free + restricted) or only the number of free dofs.
-        """ 
-        
-        is_fenics = isinstance(u, fem.Function)
-        
-        if is_fenics:
-            u_fenics = u
-            u = u.x.array
-
-        if len(u) == self.dim:
-            _u = u
-        elif len(u) == self._ndofs:
-            _u = np.zeros(self.dim)
-            _u[self.dofs] = u
-        else:
-            raise ValueError(f"Length of u has to be either {self.dim} (full vector) or {self._ndofs} (only unrestricted dofs), but is {len(u)}")
-            
-        for bc in self.bcs: bc.set(mu, _u)
-        
-        if is_fenics:
-            u_fenics.x.array[:] = _u
-            return u_fenics
-        else:
-            return _u
+from ulmRBM.fenicsx import utils, AffineDirichletBC, FEniCSxSpaceWithDirichletBCs
 
 
 def weak_problem(msh: mesh.Mesh, 
                  operator: list[AffineObject, AffineObject, AffineObject], 
                  data: list[AffineList, list[AffineList], list[AffineList]] | list[any,any], 
                  dbdry_U: list = [], 
-                 dbdry_V: list = [], 
                  nbdry_U: list = [], 
+                 dbdry_V: list = [], 
                  U: fem.FunctionSpace | None = None, 
                  V: fem.FunctionSpace | None = None,
                  A_Space: fem.FunctionSpace | None = None, 
@@ -110,8 +48,95 @@ def weak_problem(msh: mesh.Mesh,
                  C_space: fem.FunctionSpace | None = None, 
                  F_space: fem.FunctionSpace | None = None, 
                  H_spaces: list[fem.FunctionSpace] | None = None) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
-    r""" Create a weak variational formulation of an abstract 2nd order operator.
+    r"""Build the FEM weak formulation of a general second-order operator with
+    inhomogeneous Dirichlet and Neumann boundary data.
+
+    Consider the second order PDE
+
+    .. math::
+        \nabla \cdot \left(A\nabla u\right) + b \cdot \nabla u + c\,u = f
+        \quad \text{in } \Omega,
+
+    .. math::
+        u = g_i \quad \text{on } \Gamma_D^i, \quad i=1,...,N_D,
         
+    .. math::
+        (A\nabla u)\cdot n = h_i \quad \text{on } \Gamma_N^i, \quad i=1,...,N_N.
+
+    using the weak formulation to find u in a trial space U such that
+    for all v in a test space V it holds
+    
+    .. math::
+        b(u, v) = f(v)
+        
+    with 
+    
+    .. math::
+        b(u, v) = -\left(A\nabla u, \nabla v\right)_{\Omega}
+        + \left(b\cdot\nabla u, v\right)_{\Omega}
+        + \left(cu, v\right)_{\Omega},
+        
+    and
+    
+    .. math::
+        f(v) = \left(f, v\right)_{\Omega} - \left(h, v\right)_{\Gamma_N}.
+        
+    The discrete system is assembled first on the full spaces, resulting in a linear system
+    
+    .. math::
+        Bu = f,
+        
+    with 
+    
+    .. math:: 
+        B = \begin{bmatrix} B[F_V, F_U] & B[F_V, D_U] \\ B[D_V, F_U] & B[D_V, D_U] \end{bmatrix},\qquad
+        f = \begin{bmatrix} f[F_V] \\ f[D_V] \end{bmatrix},\qquad
+        u = \begin{bmatrix} u[F_U] \\ u[D_U] \end{bmatrix}.
+    
+    Thereby :math:`F_U` and :math:`F_V` denote the free degrees of freedom of trial and test space, respectively, while :math:`D_U` and :math:`D_V` denote the dirichlet degrees of freedom. The system is then reduced to the free degrees of freedom according to Dirichlet constraints, removing all dirichlet dofs from the test space and moving the dirichlet boundary condition on the trial space to the right-hand side, resulting in
+    
+    .. math::
+        \tilde{B}\tilde{u} = \tilde{f},\qquad
+        \tilde{B} = B[F_V, F_U],\quad
+        \tilde{f} = f[F_V] - B[F_V, D_U]g[D_U].
+
+    The final solution then reads :math:`u[F_U] = \tilde{u}` and :math:`u[D_U] = g[D_U]`.
+
+    Parameters
+    ----------
+    msh :
+        Mesh of the domain :math:`\Omega \in \mathbb{R}^{gdim}`.
+    operator :
+        Tuple (A, b, c) of affine coefficient objects, where A is the :math:`\mathbb{R}^{gdim \times gdim}` diffusion matrix, b  is the :math:`\mathbb{R}^{gdim}` convection vector, and c is the :math:`\mathbb{R}` reaction coefficient. All have to be compatible with `ulmRBM.fenicsx.utils.interpolate_function`.
+    data :
+        Either:
+        1) (u_exact, mu_exact): 
+        :math:`f,g,h` are calculated from an exact solution :math:`u_{exact}` at a given parameter value :math:`\mu_{exact}`. Has to be compatible with `ulmRBM.fenicsx.utils.interpolate_function`.
+        2) (f, g, h):
+        User-provided affine right-hand side, Dirichlet data list, and
+        Neumann data list, have to be compatible with `ulmRBM.fenicsx.utils.interpolate_function`.
+    dbdry_U :
+        List of boundary locator callables for Dirichlet boundaries of trial space U compateble with `dolfinx.mesh.locate_entities_boundary`.
+    nbdry_U :
+        List of boundary locator callables for Neumann boundaries compateble with `dolfinx.mesh.locate_entities_boundary`.
+    dbdry_V :
+        List of boundary locator callables for homogeneous Dirichlet boundaries
+        of test space V compateble with `dolfinx.mesh.locate_entities_boundary`.
+    U, V :
+        Optional trial/test spaces. Defaults are H1, i.e. first-order Lagrange spaces.
+    A_Space, B_space, C_space, F_space, H_spaces :
+        Optional interpolation spaces for :math:`A,b,c,f,h`. Defaults are L2, i.e. piecewise constant discontinuous Galerkin spaces.
+
+    Returns
+    -------
+    B :
+        AffineLinear of the system matrix :math:`\tilde{B}` reduced to the free degrees of freedom.
+    f :
+        AffineLinear of the reduced right-hand side :math:`\tilde{f}`.
+    U :
+        Trial space wrapper with Dirichlet metadata.
+    V :
+        Test space wrapper with Dirichlet metadata.
     """
     
     tdim = msh.topology.dim
@@ -156,12 +181,12 @@ def weak_problem(msh: mesh.Mesh,
         _A = utils.interpolate_function(utils.change_element(F_space, add_degree=1, shape=(gdim, gdim)), A(mu_exact))
         _b = utils.interpolate_function(utils.change_element(F_space, shape=(gdim,)), b(mu_exact))
         _c = utils.interpolate_function(F_space, c(mu_exact))
-        l = AffineObject([1.0], [ufl.div(_A*ufl.grad(_u)) + ufl.inner(_b,ufl.grad(_u)) + _c*_u])
+        f = AffineObject([1.0], [ufl.div(_A*ufl.grad(_u)) + ufl.inner(_b,ufl.grad(_u)) + _c*_u])
     
     elif len(data) == 3:
-        l, g, h = data
+        f, g, h = data
         
-        l = l.apply2data(lambda fq: utils.interpolate_function(F_space, fq))
+        f = f.apply2data(lambda fq: utils.interpolate_function(F_space, fq))
         g = [g.apply2data(lambda gq: utils.interpolate_function(U, gq)) for g in g]
         h = [h.apply2data(lambda hq: utils.interpolate_function(H_space, hq)) for h, H_space in zip(h, H_spaces)]
         
@@ -201,39 +226,75 @@ def weak_problem(msh: mesh.Mesh,
             + b.apply2data(lambda bq: ufl.inner(bq, ufl.grad(u)) * v * ufl.dx) \
             + c.apply2data(lambda cq: cq * u * v * ufl.dx)
         
-    l_ufl = l.apply2data(lambda fq: fq * v * ufl.dx) \
+    f_ufl = f.apply2data(lambda fq: fq * v * ufl.dx) \
             - sum(h.apply2data(lambda hq: hq * v * ds(i)) for i,h in enumerate(h))
 
     B_ufl = B_ufl.compress()
-    l_ufl = l_ufl.compress()
+    f_ufl = f_ufl.compress()
 
     ########################################
     # extract discrete system
 
     B_full = AffineLinear(B_ufl.apply2data(lambda Bq: csr_array(fem.assemble_matrix(fem.form(Bq)).to_scipy())))
-    l_full = AffineLinear(l_ufl.apply2data(lambda lq:           fem.assemble_vector(fem.form(lq)).array))
+    f_full = AffineLinear(f_ufl.apply2data(lambda lq:           fem.assemble_vector(fem.form(lq)).array))
 
     ########################################
     # apply dirichlet boundary conditions
 
     B = B_full.apply2data(lambda Bq: Bq[V.dofs,:][:,U.dofs])
-    l = l_full.apply2data(lambda lq: lq[V.dofs]) \
+    f = f_full.apply2data(lambda lq: lq[V.dofs]) \
         - sum(B_full.apply2data(lambda Bq: Bq[V.dofs,:][:,bc.dofs]) @ bc for bc in bcs_U_D)
     
-    return B, l, U, V
+    return B.compress(), f.compress(), U, V
 
 
-def thermal_block(Omega: np.ndarray, nh: list[int], nblocks: list[int], data: list[AffineList, AffineList, AffineList]  | list[any,any] = None, plot: bool = False) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
-    r""" Create a weak variational formulation of the thermal block problem.
-        
+def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+    r"""Create the parametric thermal block problem.
+
+    The domain is the unit square :math:`\Omega = (0,1)^2`, partitioned into
+    :math:`n_{\mathrm{blocks},1} \times n_{\mathrm{blocks},2}` rectangular blocks.
+    The model uses
+
+    .. math::
+        b(x) = 0, \qquad c(x) = 0, \qquad f(x) = 1,
+
+    and a blockwise affine-parametric diffusion tensor
+
+    .. math::
+        A_\mu(x) = -\sum_{q=1}^{Q} \theta_q(\mu)\,\chi_q(x)\,I,
+
+    where :math:`\chi_q` are indicator functions of the blocks and
+    :math:`\theta_q(\mu) = \mu_q`.
+
+    All exterior facets are treated as Dirichlet boundaries for 
+    trial and test spaces, i.e. :math:`\Gamma_D = \partial\Omega`
+    and :math:`\Gamma_N = \emptyset` with dirichlet data :math:`g=0`.
+
+    Parameters
+    ----------
+    nh : 
+        Number of mesh cells in each spatial direction.
+    nblocks : 
+        Number of thermal blocks in each spatial direction.
+    plot :
+        If ``True``, visualize all block indicator functions :math:`\chi_q`.
+
+    Returns
+    -------
+    See `ulmRBM.fenicsx.problems.weak_problem` for details on the return values.
     """
-    msh = mesh.create_rectangle(MPI.COMM_WORLD, Omega, nh)
+    msh = mesh.create_rectangle(MPI.COMM_WORLD, [[0, 0], [1, 1]], nh)
     gdim = msh.geometry.dim
     
-    dbdry_U = [lambda x: utils.isclose(x[0:gdim], Omega)]
+    dbdry_U = [lambda x: np.ones(x.shape[1], dtype=bool)]
+    nbdry_U = []
     dbdry_V = dbdry_U
     
-    blocks = [np.linspace(Omega[0][i], Omega[1][i], nblocks[i]+1) for i in range(Omega.shape[1])]
+    f = AffineObject([1.0], [1.0])
+    g = [AffineObject([0.0], [1.0])]
+    h = []
+    
+    blocks = [np.linspace(0, 1, nblocks[i]+1) for i in range(2)]
     
     def chi(x, block_id):
         value = np.ones(x.shape[1], dtype=bool)
@@ -247,16 +308,8 @@ def thermal_block(Omega: np.ndarray, nh: list[int], nblocks: list[int], data: li
     A = AffineObject()
     for idx in product(*[range(n) for n in nblocks]):
         A += [(lambda mu, idx=idx: mu[idx], lambda x, idx=idx: -np.eye(gdim).reshape(-1,1) * chi(x, idx) )]
-    b = AffineObject([1.0], [np.zeros(gdim)])
-    c = AffineObject([1.0], [0.0])
-    
-    if data is None:
-        data = (AffineObject([1.0], [1.0]), # right-hand side
-                AffineObject([1.0], [0.0]), # dirichlet boundary condition
-                AffineObject([1.0], [0.0])) # neumann boundary condition
-    
-    if len(data) == 3:
-        data = (data[0], [data[1]], [data[2]])
+    b = AffineObject([0.0], [np.zeros(gdim)])
+    c = AffineObject([0.0], [0.0])
         
     if plot:
         plotter = pv.Plotter(shape=(nblocks))
@@ -268,4 +321,4 @@ def thermal_block(Omega: np.ndarray, nh: list[int], nblocks: list[int], data: li
             utils.plot_pyvista(tmp.x.array, utils.change_element(L2, shape=()), f"chi {idx}", plotter)
         plotter.show(interactive_update=True)
     
-    return weak_problem(msh, (A,b,c), data, dbdry_U, dbdry_V)
+    return weak_problem(msh, (A,b,c), (f,g,h), dbdry_U, nbdry_U, dbdry_V)

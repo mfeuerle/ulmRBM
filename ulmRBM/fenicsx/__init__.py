@@ -15,6 +15,7 @@ Classes
    :toctree: generated/
    
     AffineDirichletBC
+    FEniCSxSpaceWithDirichletBCs
     
 Functions
 ----------------
@@ -26,11 +27,13 @@ Functions
 
 __all__ = [
     'utils',
+    'problems',
     'AffineDirichletBC',
+    'FEniCSxSpaceWithDirichletBCs',
     'free_dofs',
 ]
 
-from ._dirichletbcs import AffineDirichletBC, free_dofs
+from ._dirichletbcs import AffineDirichletBC, FEniCSxSpaceWithDirichletBCs, free_dofs
 from . import utils
 from . import problems
 

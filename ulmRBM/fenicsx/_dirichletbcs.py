@@ -12,6 +12,7 @@ from ulmRBM.affine import AffineList, AffineLinear, _ConstructNew
 __all__ = [
     'utils',
     'AffineDirichletBC',
+    'FEniCSxSpaceWithDirichletBCs',
     'free_dofs',
 ]
 
@@ -142,7 +143,66 @@ class AffineDirichletBC(AffineLinear[Mu, np.ndarray]):
         g.x.array[self.dofs] = self(mu)
         return fem.dirichletbc(g, self.dofs)
     
-    
+
+class FEniCSxSpaceWithDirichletBCs:
+    r""" Combination of a FEniCSx FunctionSpace and boundary conditions.
+    """
+    def __init__(self, space: fem.FunctionSpace, bcs: list[AffineDirichletBC], warn: bool = True):
+        r"""
+        Args:
+            space:
+                Function space to be wrapped.
+            bcs:
+                List of dirichlet boundary conditions.
+            warn:
+                Whether to warn, if there are dofs set by multiple boundary conditions.
+        """
+        
+        self.space: fem.FunctionSpace = space
+        "Function space"
+        self.dim: int = space.dofmap.index_map.size_global
+        "Dimension of the space (number of free + restricted dofs)."
+        self.bcs: list[AffineDirichletBC] = bcs
+        "List of all dirichlet boundary conditions of this space."
+        self.dofs: np.ndarray[bool] = free_dofs(bcs, warn=warn) if len(bcs) > 0 else np.ones(self.dim, dtype=bool)
+        "Boolean array of the free dofs (True if free, False if restricted by a dirichlet boundary condition)."
+        self._ndofs = sum(self.dofs)
+        "Total number of free dofs."
+        
+    def __repr__(self):
+        return f"<{self.__class__.__name__} of dim={self.dim} and {self._ndofs} free dofs>"
+        
+    def set_dirichletbcs(self, mu, u: np.ndarray | fem.Function):
+        r""" Insert the dirichlet boundary conditions into a given vector.
+        
+        Args:
+            mu:
+                Parameter value, at which the boundary conditions should be evaluated.
+            u:
+                Vector (or FEniCS function) containing the values at the free dofs, to which the dirichlet boundary conditions should be added. Can either have length equal to the total number of dofs (free + restricted) or only the number of free dofs.
+        """ 
+        
+        is_fenics = isinstance(u, fem.Function)
+        
+        if is_fenics:
+            u_fenics = u
+            u = u.x.array
+
+        if len(u) == self.dim:
+            _u = u
+        elif len(u) == self._ndofs:
+            _u = np.zeros(self.dim)
+            _u[self.dofs] = u
+        else:
+            raise ValueError(f"Length of u has to be either {self.dim} (full vector) or {self._ndofs} (only unrestricted dofs), but is {len(u)}")
+            
+        for bc in self.bcs: bc.set(mu, _u)
+        
+        if is_fenics:
+            u_fenics.x.array[:] = _u
+            return u_fenics
+        else:
+            return _u   
     
 
 def free_dofs(bcs: list[AffineDirichletBC], warn: bool = True) -> np.ndarray[bool]:

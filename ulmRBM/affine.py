@@ -360,7 +360,10 @@ class AffineList(Generic[Mu], MutableSequence):
         Compress the affine decomposition by combining constant terms.
         
         All terms with  constant coefficients are combined into a single term, 
-        reducing the total number of terms in the decomposition.
+        reducing the total number of terms in the decomposition. 
+        Further, terms with constant zero coefficients are removed, unless all terms are zero, 
+        in which case it returns a single term with zero coefficient, 
+        to avoid returning an empty decomposition.
         
         Returns:
             A new :class:`AffineList` with constant terms merged.
@@ -376,15 +379,22 @@ class AffineList(Generic[Mu], MutableSequence):
         2
         """
         constant_data = None
+        zero_data = None
         new_theta = []
         new_data = []
         
         for theta_q, data_q in self:
             if isinstance(theta_q, TrivialParametric):
-                if constant_data is None:
-                    constant_data = theta_q.data * data_q
+                if theta_q.data == 0.0:
+                    if zero_data is None:
+                        zero_data = data_q
+                    else:
+                        zero_data += data_q
                 else:
-                    constant_data += theta_q.data * data_q
+                    if constant_data is None:
+                        constant_data = theta_q.data * data_q
+                    else:
+                        constant_data += theta_q.data * data_q
             else:
                 new_theta.append(theta_q)
                 new_data.append(data_q)
@@ -393,6 +403,10 @@ class AffineList(Generic[Mu], MutableSequence):
             new_theta.insert(0, 1.0)
             new_data.insert(0, constant_data)
         
+        if len(new_data) == 0:
+            new_theta.insert(0, 0.0)
+            new_data.insert(0, zero_data)
+            
         return self._construct_new(new_theta, new_data)
     
     def apply2data(self, func: Callable[[any], any]) -> AffineList[Mu]:

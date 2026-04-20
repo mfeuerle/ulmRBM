@@ -19,24 +19,20 @@ nbdry_U = [lambda x: utils.isclose(x[1], Omega[:,1])]   # list of neumann bounda
 dbdry_V = dbdry_U                                       # list of dirichlet boundary parts of the test space V
 
 # for x dependent diffusion, e.g.: lambda x: -np.eye(gdim).reshape(-1,1) * np.ones(x.shape[1])
-aa = AffineObject([lambda mu: mu], [-np.eye(gdim)])
-bb = AffineObject([1.0], [np.ones(gdim)])
-cc = AffineObject([1.0], [1.0])
+A = AffineObject([lambda mu: mu], [-np.eye(gdim)])
+b = AffineObject([1.0], [np.ones(gdim)])
+c = AffineObject([1.0], [1.0])
 
-operator = (aa,bb,cc)
-
-use_exact = False    # wheter to calculate data from an exact solution
-
+use_exact = True    # wheter to calculate data from an exact solution
 if use_exact:
     data = (lambda x: np.sin(np.pi*x[0])*x[1],  # exact solution at one
             1.0)                                # given parameter value
-    
 else:
     data = ( AffineObject([1.0], [1.0]),   # f: right-hand side
             [AffineObject([1.0], [1.0])],  # g: list of dirichlet boundary conditions
             [AffineObject([1.0], [1.0])])  # h: list of neumann boundary conditions
     
-B, f, U, V = weak_problem(msh, operator, data, dbdry_U, dbdry_V, nbdry_U)
+B, f, U, V = weak_problem(msh, (A,b,c), data, dbdry_U, nbdry_U, dbdry_V)
 
 def solve(mu):
     u = spsolve(B(mu), f(mu))

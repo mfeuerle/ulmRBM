@@ -6,10 +6,9 @@ from ulmRBM.fenicsx import utils
 from ulmRBM.fenicsx.problems import thermal_block
 
 
-Omega = np.array([[0.0, 0.0], [2.0, 2.0]]) 
 nblocks = [2, 3]
 
-B, f, U, V = thermal_block(Omega, [20, 20], nblocks, plot=True)
+B, f, U, V = thermal_block([20, 20], nblocks, plot=True)
 
 def solve(mu):
     u = spsolve(B(mu), f(mu))
