@@ -65,14 +65,3 @@
 
    {% endif %}
   {% endblock %}
-
-.. 
-   .. collapse:: More Dunder Methods
-
-      .. autosummary::
-         :toctree: {{ objname }}
-      {% for item in all_methods %}
-         {%- if item.startswith('__') and item.endswith('__') and not item in m %}
-         ~{{ name }}.{{ item }}
-         {%- endif -%}
-      {%- endfor %}

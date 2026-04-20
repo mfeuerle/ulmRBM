@@ -1,5 +1,5 @@
 """
-Core types and utilities for the myrbm package.
+Core types and utilities for the ulmRBM package.
 
 This module provides fundamental type aliases, abstract base classes,
 and wrapper utilities used throughout the package.
@@ -9,8 +9,6 @@ Type Aliases
 .. autosummary::
    :toctree: generated/
    
-    Matrix
-    Vector
     Data
     Mu
     NO_MU
@@ -45,17 +43,11 @@ __all__ = [
 import numpy as np
 import scipy as sp
 from scipy.sparse.linalg import LinearOperator
+from scipy.sparse import sparray
 
-from collections.abc import Callable
-from typing import TypeVar, Generic
+from typing import TypeAlias, TypeVar, Generic
 from abc import ABC, abstractmethod
 from numbers import Number
-
-try:
-    import kron
-    _HAS_KRON = True
-except ImportError:
-    _HAS_KRON = False
     
 Mu = TypeVar("Mu")
 """TypeAlias variable for parameter types."""
@@ -63,10 +55,17 @@ Mu = TypeVar("Mu")
 Data = TypeVar("Data")
 """TypeAlias variable for data types."""
 
-Matrix = np.ndarray | sp.sparse.sparray | LinearOperator | kron.kron_base if _HAS_KRON else np.ndarray | sp.sparse.sparray | LinearOperator
+Matrix: TypeAlias = np.ndarray | sparray | LinearOperator
 """Type alias for matrices, which can be dense :class:`numpy.ndarray`, sparse :class:`scipy.sparse.sparray`, Kronecker products :class:`kron.kron_base`, or matrix-free :class:`scipy.sparse.linalg.LinearOperator`."""
 
-Vector = np.ndarray
+try:
+    import kron
+    Matrix: TypeAlias = Matrix | kron.kron_base
+except ImportError:
+    pass
+
+    
+Vector: TypeAlias = np.ndarray
 """Type alias for vectors or collections of vectors (always dense numpy arrays)."""
 
 NO_MU = None

@@ -464,7 +464,7 @@ class AffineObject(AffineList[Mu], ParametricObject[Mu, Data]):
         21.0
         """
         val = self.theta[0](mu) * self.data[0]
-        for theta_q, data_q in self[1:]:
+        for theta_q, data_q in zip(self.theta[1:], self.data[1:]):
             val += theta_q(mu) * data_q
         return val
     

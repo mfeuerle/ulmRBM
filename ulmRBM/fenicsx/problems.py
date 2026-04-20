@@ -1,12 +1,5 @@
 r""" Collection of some standard problems created with FEniCSx.
 
-Classes
--------
-.. autosummary::
-   :toctree: generated/
-   
-    FEniCSxSpaceWithDirichletBCs
-
 Functions
 ----------------
 .. autosummary::
@@ -17,7 +10,6 @@ Functions
 """
 
 __all__ = [
-    'FEniCSxSpaceWithDirichletBCs',
     'weak_problem',
     'thermal_block',
     ]

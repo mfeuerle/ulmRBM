@@ -11,13 +11,23 @@ Modules
    
     core
     affine
+    products
+    solver
+    fom
+    rom
+    reductors
 """
 
-from . import core, affine
+from . import affine, core, fom, products, rom, solver, reductors
 
 __all__ = [
     'affine',
     'core',
+    'fom',
+    'products',
+    'rom',
+    'solver',
+    'reductors'
 ]
 
 try:
@@ -55,4 +65,3 @@ from scipy.sparse.linalg import LinearOperator as _LinearOperator
 linop_types = [_LinearOperator] + [type_ for type_ in _linalg.__dict__.values() if isinstance(type_, type) and issubclass(type_, _LinearOperator)]
 
 _patch_priority(linop_types, "__linop_priority__", replaced_operators)
-

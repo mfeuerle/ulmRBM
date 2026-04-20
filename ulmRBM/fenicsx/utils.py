@@ -35,22 +35,22 @@ __all__ = [
 ]
 
 def create_measure(integral_type: str, domain: mesh.Mesh, tdim: int, entities: list, tags = None) -> ufl.Measure:
-    r""" Create a ufl.Measure for the given entities and tags.
+    r""" Create a measure for the given entities and tags.
     
     Args:
         integral_type:
-            Type of the integral, e.g. "dx", "ds", "dS",
+            Type of the integral, e.g. ``"dx"``, ``"ds"``, ``"dS"``,
         domain:
             The mesh on which the measure is defined.
         tdim:
             Topological dimension of the entities, e.g. 2 for facets in a 3D mesh.
         entities:
-            List of arrays of entity indices on which the measure is defined, e.g. `entities[i]` is something as returned by `mesh.locate_entities`.
+            List of arrays of entity indices on which the measure is defined, e.g. ``entities[i]`` can be a list of entities as created by `dolfinx.mesh.locate_entities`.
         tags:
-            List of tags corresponding to the entities, e.g. `tags[i]` is the tag for `entities[i]`. If tags is None, the tags are set to 0, 1, ..., len(entities)-1. 
+            List of tags corresponding to the entities, e.g. ``tags[i]`` is the tag for ``entities[i]``. If tags is ``None``, the tags are set to ``0, 1, ..., len(entities)-1``. 
         
     Returns:
-        ufl.Measure with subdomain_data corresponding to the given entities and tags, i.e. `out[i]` returns the integral meassure over all entities with tag `i`.
+        Measure with subdomain_data corresponding to the given entities and tags, i.e. ``out[i]`` returns the integral meassure over all entities with tag ``i``.
     """
     if tags is None: tags = np.arange(len(entities))
     assert len(entities) == len(tags)
@@ -99,10 +99,10 @@ def interpolate_function(space: fem.FunctionSpace, func: np.ndarray | sp.sparse.
     func_.interpolate(func)
     return func_
 
-def dirichletbc(space: fem.FunctionSpace, u: any, dofs: np.ndarray[int]) -> fem.DirichletBC:
+def dirichletbc(space: fem.FunctionSpace, u, dofs: np.ndarray[int]) -> fem.DirichletBC:
     r""" Create a FEniCSx DirichletBC from the given boundary values and dofs.
     
-    Again, the main problem are the many different objects in FEniCSx and one would need to handle each of them separately, e.g. to create a boundary condition from a `dolfinx.fem.Constant`, one needs to call `dolfinx.fem.dirichletbc(u, dofs, space)`, while for a `dolfinx.fem.Function`, one needs to call `dolfinx.fem.dirichletbc(u, dofs)`. This functions aimes at providing a unified interface.
+    Again, the main problem are the many different objects in FEniCSx and one would need to handle each of them separately, e.g. to create a boundary condition from a `dolfinx.fem.Constant`, one needs to call ``dolfinx.fem.dirichletbc(u, dofs, space)``, while for a `dolfinx.fem.Function`, one needs to call ``dolfinx.fem.dirichletbc(u, dofs)``. This functions aimes at providing a unified interface.
     
     Args:
         space:
@@ -134,16 +134,16 @@ def change_element(space: fem.FunctionSpace, shape: int =None, degree: int = Non
         space:
             The original function space.
         shape:
-            The shape of the new element, e.g. (gdim,) for a vectorial element. If None, the shape of the original element is used.
+            The shape of the new element, e.g. ``(gdim,)`` for a vectorial element. If None, the shape of the original element is used.
         degree:
             The degree of the new element. If None, the degree of the original element is used.
         add_degree:
-            Increase the degree of the original element by this value. This is added to the degree given by the `degree` argument, i.e. the degree of the new element is `degree + add_degree` if `degree` is not None and `original_degree + add_degree` if `degree` is None.
+            Increase the degree of the original element by this value. This is added to the degree given by the ``degree`` argument, i.e. the degree of the new element is ``degree + add_degree`` if ``degree`` is not None and ``original_degree + add_degree`` if ``degree`` is None.
         discontinuous:
             Whether the new element should be discontinuous. If None, the same discontinuity as the original element is used, except that if the original element is continuous and the new degree is 0, the new element is set to be discontinuous, as there is no continuous element of degree 0.
         
     Returns:
-        A new FEniCSx function space with the modified element.    
+        A new FEniCSx function space with the modified element.
     """
     el = space.ufl_element().basix_element
     if shape is None:
@@ -200,22 +200,21 @@ def plot_pyvista(u: np.ndarray, space: fem.FunctionSpace, name: str, plotter: pv
     plotter.add_text(name)
     
     
-def isclose(x, reference_points, *args, **kwargs):
-    """ Check which points in x are numerically close to at least on target point in at least one coordinate.
+def isclose(x: np.ndarray, reference_points: np.ndarray, *args, **kwargs) -> np.ndarray[bool]:
+    """Check which points in x are numerically close to at least on target point in at least one coordinate.
     
-    Parameters
-    ----------
-    x : array-like of shape (n_dims, n_points) or (n_points,) if n_dims=1
-        Coordinate values to test.
-    reference_points : array-like of shape (n_refs, n_dims) or (n_dims,) if n_refs=1 or scalar if n_dims=n_refs=1
-        Reference values to test against.
-    *args, **kwargs :
-        Additional arguments passed to numpy.isclose() for the actual closeness check (e.g. rtol, atol).
+    Args:
+        x : 
+            Coordinate values to test. Expected shape ``(n_dims, n_points)``
+            or ``(n_points,)`` if ``n_dims = 1``.
+        reference_points : 
+            Reference values to test against. Expected shape ``(n_refs, n_dims)``,
+            or ``(n_dims,)`` if ``n_refs = 1``, or scalar if ``n_dims = n_refs = 1``.
+        \*args, \*\*kwargs :
+            Additional arguments passed to `numpy.isclose` for the actual closeness check (e.g. ``rtol``, ``atol``).
         
-    Returns
-    -------
-    ndarray of bool of shape (n_points,)
-        ``output[i]`` is ``True`` if ``x[j,i]`` is close to ``reference_points[k,j]`` for at least on ``k``, i.e. if the point is close to at least one reference point in at least one dimension.
+    Returns:
+        Array of shape ``(n_points,)``, where ``output[i]`` is ``True`` if ``x[j,i]`` is close to ``reference_points[k,j]`` for at least on ``k``, i.e. if the point is close to at least one reference point in at least one dimension.
     """
     
     x = np.asarray(x)
