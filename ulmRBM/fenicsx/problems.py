@@ -107,14 +107,14 @@ def weak_problem(msh: mesh.Mesh,
     msh :
         Mesh of the domain :math:`\Omega \in \mathbb{R}^{gdim}`.
     operator :
-        Tuple (A, b, c) of affine coefficient objects, where A is the :math:`\mathbb{R}^{gdim \times gdim}` diffusion matrix, b  is the :math:`\mathbb{R}^{gdim}` convection vector, and c is the :math:`\mathbb{R}` reaction coefficient. All have to be compatible with `ulmRBM.fenicsx.utils.interpolate_function`.
+        Tuple (A, b, c) of affine coefficient objects, where A is the :math:`\mathbb{R}^{gdim \times gdim}` diffusion matrix, b  is the :math:`\mathbb{R}^{gdim}` convection vector, and c is the :math:`\mathbb{R}` reaction coefficient. All have to be compatible with `utils.interpolate_function`.
     data :
         Either:
         1) (u_exact, mu_exact): 
-        :math:`f,g,h` are calculated from an exact solution :math:`u_{exact}` at a given parameter value :math:`\mu_{exact}`. Has to be compatible with `ulmRBM.fenicsx.utils.interpolate_function`.
+        :math:`f,g,h` are calculated from an exact solution :math:`u_{exact}` at a given parameter value :math:`\mu_{exact}`. Has to be compatible with `utils.interpolate_function`.
         2) (f, g, h):
         User-provided affine right-hand side, Dirichlet data list, and
-        Neumann data list, have to be compatible with `ulmRBM.fenicsx.utils.interpolate_function`.
+        Neumann data list, have to be compatible with `utils.interpolate_function`.
     dbdry_U :
         List of boundary locator callables for Dirichlet boundaries of trial space U compateble with `dolfinx.mesh.locate_entities_boundary`.
     nbdry_U :
@@ -281,7 +281,7 @@ def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False)
 
     Returns
     -------
-    See `ulmRBM.fenicsx.problems.weak_problem` for details on the return values.
+    See `weak_problem` for details on the return values.
     """
     msh = mesh.create_rectangle(MPI.COMM_WORLD, [[0, 0], [1, 1]], nh)
     gdim = msh.geometry.dim

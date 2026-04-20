@@ -93,10 +93,10 @@ class AffineList(Generic[Mu], MutableSequence):
     """Priority for NumPy to defer to our __r*__ methods."""
     
     __sparse_priority__ = 100.0
-    """Priority for scipy.sparse to defer to our ``__r*__`` methods (via patch in :mod:`myrbm`)."""
+    """Priority for scipy.sparse to defer to our ``__r*__`` methods (via patch in :mod:`ulmRBM`)."""
     
     __linop_priority__ = 100.0
-    """Priority for :mod:`scipy.sparse.linalg.LinearOperator` to defer to our ``__r*__`` methods (via patch in :mod:`myrbm`)."""
+    """Priority for :mod:`scipy.sparse.linalg.LinearOperator` to defer to our ``__r*__`` methods (via patch in :mod:`ulmRBM`)."""
     
     __kron_priority__ = 100.0
     """Priority over the https://github.com/mfeuerle/kron module to defer to our ``__r*__`` methods."""
@@ -463,8 +463,8 @@ class AffineObject(AffineList[Mu], ParametricObject[Mu, Data]):
         >>> ad(3.0)  # 3*1 + 9*2 = 21
         21.0
         """
-        val = 0
-        for theta_q, data_q in self:
+        val = self.theta[0](mu) * self.data[0]
+        for theta_q, data_q in self[1:]:
             val += theta_q(mu) * data_q
         return val
     
