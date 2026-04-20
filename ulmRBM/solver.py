@@ -43,17 +43,16 @@ class Solver(ABC):
     @abstractmethod
     def __call__(self, A: Matrix, b: Vector, x0: Vector = None) -> Vector:
         r"""
-        Solve the linear system A x = b.
+        Solve the linear system ``A x = b``.
         
         Args:
-            A : (m,n) :obj:`Matrix`, m>=n
-            b : (m,) or (m,k) :obj:`Vectors`
-            x0 : (n,) or (n,k) :obj:`Vectors`, optional
+            A : ``(m,n)`` vatrix, ``m>=n``
+            b : ``(m,)`` or ``(m,k)`` vector
+            x0 : ``(n,)`` or ``(n,k)`` vector, optional
                 Initial guess for iterative solvers. Ignored by direct solvers.
         
         Returns:
-            (n,) or (n,k) :obj:`Vectors` :
-                Solution or least-squares approximation of ``Ax = b``.
+            Solution or linear system / least-squares approximation of ``Ax = b`` as ``(n,)`` or ``(n,k)`` vector (depending on the shape of ``x0`` if given, otherwise on the shape of ``b``).
         """
         pass
 

@@ -6,12 +6,13 @@ and wrapper utilities used throughout the package.
 
 Type Aliases
 --------------
-.. autosummary::
-   :toctree: generated/
-   
-    Data
-    Mu
-    NO_MU
+.. currentmodule:: ulmRBM.core
+
+.. autodata:: Matrix
+.. autodata:: Vector
+.. autodata:: Data
+.. autodata:: Mu
+.. autodata:: NO_MU
     
 Abstract Base Classes
 ----------------------
