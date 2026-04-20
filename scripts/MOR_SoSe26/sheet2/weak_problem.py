@@ -14,9 +14,8 @@ Omega = np.array([[0.0, 0.0], [2.0, 2.0]])
 msh = mesh.create_rectangle(MPI.COMM_WORLD, Omega, [20, 20])
 gdim = msh.geometry.dim
 
-dbdry_U = [lambda x: utils.isclose(x[0], Omega[:,0])]   # list of dirichlet boundary parts of the trial space U
-nbdry_U = [lambda x: utils.isclose(x[1], Omega[:,1])]   # list of neumann boundary parts of the trial space U
-dbdry_V = dbdry_U                                       # list of dirichlet boundary parts of the test space V
+dbdry = [lambda x: utils.isclose(x[0], Omega[:,0])]   # list of dirichlet boundary parts of the trial space U
+nbdry = [lambda x: utils.isclose(x[1], Omega[:,1])]   # list of neumann boundary parts of the trial space U
 
 # for x dependent diffusion, e.g.: lambda x: -np.eye(gdim).reshape(-1,1) * np.ones(x.shape[1])
 A = AffineObject([lambda mu: mu], [-np.eye(gdim)])
@@ -32,7 +31,7 @@ else:
             [AffineObject([1.0], [1.0])],  # g: list of dirichlet boundary conditions
             [AffineObject([1.0], [1.0])])  # h: list of neumann boundary conditions
     
-B, f, U, V = weak_problem(msh, (A,b,c), data, dbdry_U, nbdry_U, dbdry_V)
+B, f, U, V = weak_problem(msh, (A,b,c), data, dbdry, nbdry)
 
 def solve(mu):
     u = spsolve(B(mu), f(mu))

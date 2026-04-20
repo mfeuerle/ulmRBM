@@ -32,7 +32,7 @@ def weak_problem(msh: mesh.Mesh,
                  data: list[AffineList, list[AffineList], list[AffineList]] | list[any,any], 
                  dbdry_U: list = [], 
                  nbdry_U: list = [], 
-                 dbdry_V: list = [], 
+                 dbdry_V: list = None, 
                  U: fem.FunctionSpace | None = None, 
                  V: fem.FunctionSpace | None = None,
                  A_Space: fem.FunctionSpace | None = None, 
@@ -113,7 +113,7 @@ def weak_problem(msh: mesh.Mesh,
         List of boundary locator callables for Neumann boundaries compateble with `dolfinx.mesh.locate_entities_boundary`.
     dbdry_V :
         List of boundary locator callables for homogeneous Dirichlet boundaries
-        of test space V compateble with `dolfinx.mesh.locate_entities_boundary`.
+        of test space V compateble with `dolfinx.mesh.locate_entities_boundary`. If None, it is set to :math:`\partial\Omega \setminus \bigcup_i \Gamma_N^i`, i.e. all boundaries that are not Neumann boundaries for U are treated as homogeneous Dirichlet boundaries for V.
     U, V :
         Optional trial/test spaces. Defaults are H1, i.e. first-order Lagrange spaces.
     A_Space, B_space, C_space, F_space, H_spaces :
@@ -195,7 +195,11 @@ def weak_problem(msh: mesh.Mesh,
     
     dbdry_U = [mesh.locate_entities_boundary(msh, tdim-1, bdry) for bdry in  dbdry_U]
     nbdry_U = [mesh.locate_entities_boundary(msh, tdim-1, bdry) for bdry in  nbdry_U]
-    dbdry_V = [mesh.locate_entities_boundary(msh, tdim-1, bdry) for bdry in  dbdry_V]
+    if dbdry_V is None:
+        _all_bdry = mesh.exterior_facet_indices(msh.topology)
+        dbdry_V = [np.setdiff1d(_all_bdry, np.concatenate(nbdry_U))] if len(nbdry_U) > 0 else [_all_bdry]
+    else:
+        dbdry_V = [mesh.locate_entities_boundary(msh, tdim-1, bdry) for bdry in  dbdry_V]
 
     # create dirichlet boundary conditions
     bcs_U_D = [AffineDirichletBC(U, g, bdry) for g, bdry in zip(g, dbdry_U)]
@@ -278,9 +282,7 @@ def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False)
     msh = mesh.create_rectangle(MPI.COMM_WORLD, [[0, 0], [1, 1]], nh)
     gdim = msh.geometry.dim
     
-    dbdry_U = [lambda x: np.ones(x.shape[1], dtype=bool)]
-    nbdry_U = []
-    dbdry_V = dbdry_U
+    dbdry = [lambda x: np.ones(x.shape[1], dtype=bool)]
     
     f = AffineObject([1.0], [1.0])
     g = [AffineObject([0.0], [1.0])]
@@ -313,4 +315,4 @@ def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False)
             utils.plot_pyvista(tmp.x.array, utils.change_element(L2, shape=()), f"chi {idx}", plotter)
         plotter.show(interactive_update=True)
     
-    return weak_problem(msh, (A,b,c), (f,g,h), dbdry_U, nbdry_U, dbdry_V)
+    return weak_problem(msh, (A,b,c), (f,g,h), dbdry)
