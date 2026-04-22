@@ -1,10 +1,11 @@
 
 __all__ = [
-    '_patch_priority',
-    '_patch_MatrixLinearOperator_matmat',
+    'patch_priority',
+    'patch_MatrixLinearOperator_matmat',
+    'apply_patches',
 ]
 
-def _patch_priority(classes, priority_name, replaced_operators):
+def patch_priority(classes, priority_name, replaced_operators):
     """Patch new prioritys..
     
     This is necessary to use ``__r*__`` methods like ``__rmatmul__`` from custom classes
@@ -42,7 +43,7 @@ def _patch_priority(classes, priority_name, replaced_operators):
                     setattr(cls, operator_name, wrapped_operator)
 
 
-def _patch_MatrixLinearOperator_matmat():
+def patch_MatrixLinearOperator_matmat():
     """ Patch MatrixLinearOperator ``@`` operation, as it does not work for multiplying
      MatrixLinearOperator based on a numpy array with a non-LinearOperator and non-numpy array (e.g. sparse array) right now.
     """
@@ -55,3 +56,30 @@ def _patch_MatrixLinearOperator_matmat():
             return self.A @ X
         _matmat_new.__matmat_patch_applied = True
         setattr(MatrixLinearOperator, '_matmat', _matmat_new)
+        
+    
+def apply_patches():
+    
+    patch_MatrixLinearOperator_matmat()
+
+    replaced_operators = (
+        "__add__", "__sub__",
+        "__eq__", "__ne__", "__ge__", "__gt__", "__le__", "__lt__", 
+        "__matmul__", 
+        "__mul__", "__div__", "__truediv__",
+    )
+
+    import scipy.sparse as sparse
+    from scipy.sparse import sparray, spmatrix
+
+    sparse_types = [sparray, spmatrix] + [type_ for type_ in sparse.__dict__.values() if isinstance(type_, type) and issubclass(type_, (sparray, spmatrix))]
+
+    patch_priority(sparse_types, "__sparse_priority__", replaced_operators)
+
+
+    import scipy.sparse.linalg as linalg
+    from scipy.sparse.linalg import LinearOperator as LinearOperator
+
+    linop_types = [LinearOperator] + [type_ for type_ in linalg.__dict__.values() if isinstance(type_, type) and issubclass(type_, LinearOperator)]
+
+    patch_priority(linop_types, "__linop_priority__", replaced_operators)
