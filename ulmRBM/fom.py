@@ -103,9 +103,9 @@ class FOM(Generic[Mu]):
             V:
                 Inner product on the test space.
             stability:
-                Optional function or constant to compute the stability constant at a given parameter value. If ``None``, the constant is computed via eigenvalue problems.
+                Optional function (with signature ``(mu,fom)``) or constant to compute the stability constant at a given parameter value. If ``None``, the constant is computed via eigenvalue problems.
             continuity:
-                Optional function or constant to compute the continuity constant at a given parameter value. If ``None``, the constant is computed via an eigenvalue problems.
+                Optional function (with signature ``(mu,fom)``) or constant to compute the continuity constant at a given parameter value. If ``None``, the constant is computed via an eigenvalue problems.
             solver:
                 Solver for the linear system. Defaults to a iterative solver.
             supremizer:

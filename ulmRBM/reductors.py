@@ -34,7 +34,7 @@ def greedy_algorithm(
     update_stability: bool = True,
     update_continuity: bool = True,
     callback: Callable[[ROM[Mu], Mu, Vector], None] | None = None
-):
+) -> tuple[int, np.ndarray, np.ndarray]:
     """
     Construct a reduced basis model using a greedy algorithm.
 
@@ -56,21 +56,19 @@ def greedy_algorithm(
         update_continuity: 
             If True, update the continuity constant estimator after each enrichment. Default is True.
         callback: 
-            Optional callback called after each enrichment with signature (rom, mu, u_mu), where rom is the reduced model after enrichment, mu the parameter value of the last enrichment, and u_mu the corresponding FOM solution.
+            Optional callback called after each enrichment with signature ``(rom, mu, u_mu)``, where rom is the reduced model after enrichment, mu the parameter value of the last enrichment, and u_mu the corresponding FOM solution.
 
-    Returns:
-        flag: int
-			0 if tolerance reached, 1 if Nmax reached, 2 if training set exhausted.
-        err_decay: np.ndarray
-			Array of maximum errors over the training set at each enrichment step. Note that the last entry might be ``np.nan``, indicating that the error was not computed after the last enrichment (e.g. if ``Nmax`` is reached).
-        mu: list
-			List of selected parameter values (mu) for each basis enrichment.
-        mu_idx: np.ndarray
-			Array of selected parameter indices with respect to the training set.
+    Returns
+    ---------
+    flag:
+        0 if tolerance reached, 1 if Nmax reached, 2 if training set exhausted.
+    err_decay:
+        Array of maximum errors over the training set at each enrichment step. Note that the last entry might be ``np.nan``, indicating that the error was not computed after the last enrichment (e.g. if ``Nmax`` is reached).
+    mu_idx: 
+        Array of selected parameter indices, i.e. ``mu_train[mu_idx]`` gives the selected parameter values.
     """
     
     fom = rom.fom
-    mu_train = copy(mu_train)
     mu_train = copy(mu_train)
     selected_mu = []
     selected_mu_idx = []
@@ -196,4 +194,4 @@ def greedy_algorithm(
     if flag:
         warn(f"Greedy algorithm stopped without reaching tolerance ({codes[flag]}). Current tolerance: {err}, target tolerance: {tol}.", UserWarning)
         
-    return flag, np.array(err_decay), selected_mu, np.array(selected_mu_idx, dtype=int)
+    return flag, np.array(err_decay), np.array(selected_mu_idx, dtype=int)
