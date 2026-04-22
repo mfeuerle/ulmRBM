@@ -5,9 +5,9 @@ Norms
 .. autosummary::
     :toctree: generated/
     
-    l2_norm
-    h10_norm
-    h1_norm
+    l2
+    h10
+    h1
 """
 
 __all__ = [
@@ -27,9 +27,9 @@ from ulmRBM.solver import Solver
 from ulmRBM.products import MatrixInnerProduct
 
 
-def l2(U: FEniCSxSpaceWithDirichletBCs, 
-            bcs: bool = True,
-            solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None) -> MatrixInnerProduct:
+def l2(U: FEniCSxSpaceWithDirichletBCs,
+       solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None, 
+       bcs: bool = True) -> MatrixInnerProduct:
     r""":math:`L^2` inner product matrix.
 
     .. math::
@@ -38,10 +38,10 @@ def l2(U: FEniCSxSpaceWithDirichletBCs,
     Args:
         U :
             Function space including Dirichlet boundary conditions.
-        bcs :
-            If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
         solver :
             Optional solver used by ``MatrixInnerProduct`` for dual operations.
+        bcs :
+            If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
     """
     
     u = ufl.TrialFunction(U.space)
@@ -50,9 +50,9 @@ def l2(U: FEniCSxSpaceWithDirichletBCs,
     if bcs: product = product[U.dofs,:][:,U.dofs]
     return MatrixInnerProduct(product, solver)
 
-def h10(U: FEniCSxSpaceWithDirichletBCs, 
-             bcs: bool = True,
-             solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None) -> MatrixInnerProduct:
+def h10(U: FEniCSxSpaceWithDirichletBCs,
+        solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None,
+        bcs: bool = True) -> MatrixInnerProduct:
     r""":math:`H^1_0` inner product matrix.
 
     .. math::
@@ -61,10 +61,10 @@ def h10(U: FEniCSxSpaceWithDirichletBCs,
     Args:
         U :
             Function space including Dirichlet boundary conditions.
-        bcs :
-            If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
         solver :
             Optional solver used by ``MatrixInnerProduct`` for dual operations.
+        bcs :
+            If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
     """
     
     if U.space.ufl_element().basix_element.degree < 1:
@@ -76,9 +76,9 @@ def h10(U: FEniCSxSpaceWithDirichletBCs,
     if bcs: product = product[U.dofs,:][:,U.dofs]
     return MatrixInnerProduct(product, solver)
 
-def h1(U: FEniCSxSpaceWithDirichletBCs, 
-            bcs: bool = True,
-            solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None) -> MatrixInnerProduct:
+def h1(U: FEniCSxSpaceWithDirichletBCs,
+       solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None, 
+       bcs: bool = True) -> MatrixInnerProduct:
     r""":math:`H^1` inner product matrix.
 
     .. math::
@@ -87,10 +87,10 @@ def h1(U: FEniCSxSpaceWithDirichletBCs,
     Args:
         U :
             Function space including Dirichlet boundary conditions.
-        bcs :
-            If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
         solver :
             Optional solver used by ``MatrixInnerProduct`` for dual operations.
+        bcs :
+            If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
     """
     
-    return MatrixInnerProduct(l2(U,bcs)(NO_MU) + h10(U,bcs)(NO_MU), solver)
+    return MatrixInnerProduct(l2(U,bcs=bcs)(NO_MU) + h10(U,bcs=bcs)(NO_MU), solver)

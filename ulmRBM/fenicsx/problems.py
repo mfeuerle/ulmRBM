@@ -84,25 +84,28 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineList[np.ndarray | sparray]
                       V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray]]:
     r"""Apply Dirichlet boundary conditions to a linear system.
     
-    Starting from the system assembled on the full trial/test spaces,
+    Starting from the system assembled on the full trial/test spaces including dirichlet boundary conditions,
 
     .. math::
-        Bu = f,\qquad u[D_U] = g[D_U],
+        Bu = f,\qquad u_{D_U} = g_{D_U},
         
-    and denoting the free and dirichlet degrees of freedom of trial and test space by :math:`F_U, D_U` and :math:`F_V, D_V`, respectively, with :math:`g` denoting the dirchlet boundary conditions stored in ``U.bcs``, the system has the block structure
+    and denoting the free and dirichlet dofs of trial and test space by :math:`F_U, D_U` and :math:`F_V, D_V`, respectively (i.e. ``F_U = U.dofs`` and ``F_V = V.dofs``), with :math:`g` denoting the dirchlet boundary condition stored in ``U.bcs``, the system has the block structure
     
     .. math::
-        B = \begin{bmatrix} B[F_V, F_U] & B[F_V, D_U] \\
-        B[D_V, F_U] & B[D_V, D_U] \end{bmatrix},\qquad
-        f = \begin{bmatrix} f[F_V] \\ f[D_V] \end{bmatrix},\qquad
-        u = \begin{bmatrix} u[F_U] \\ u[D_U] \end{bmatrix}.
+        B = \begin{bmatrix} B_{F_V, F_U} & B_{F_V, D_U} \\
+        B_{D_V, F_U} & B_{D_V, D_U} \end{bmatrix},\qquad
+        f = \begin{bmatrix} f_{F_V} \\ f_{D_V} \end{bmatrix},\qquad
+        u = \begin{bmatrix} u_{F_U} \\ u_{D_U} \end{bmatrix}.
         
-    To enforce the dirchlet boundary condition, this function reduces the system to the free degrees of freedom of trial and test space, removing all dirichlet dofs from the test space and moving the dirichlet boundary condition on the trial space to the right-hand side:
+    To enforce the dirchlet boundary condition in a single linear system of equations, this function restricts the full system to the free dofs of trial and test space, removing all dirichlet dofs from the test space and moving the dirichlet boundary condition on the trial space to the right-hand side:
     
     .. math::
-        \tilde{B} u[F_U] = \tilde{f},\qquad
-        \tilde{B} = B[F_V, F_U],\qquad
-        \tilde{f} = f[F_V] - B[F_V, D_U]g[D_U].
+        \tilde{B} \tilde{u} = \tilde{f},\qquad
+        \tilde{B} = B_{F_V, F_U},\qquad
+        \tilde{f} = f_{F_V} - B_{F_V, D_U}g_{D_U},\qquad
+        \tilde{u} = u_{F_U}.
+        
+    The solution :math:`u` of the full system then reads :math:`u_{F_U} = \tilde{u}` and :math:`u_{D_U} = g_{D_U}`.
 
     Args:
         B :
@@ -110,12 +113,13 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineList[np.ndarray | sparray]
         f :
             Right-hand side vector assembled on the full test space, i.e. ``f.shape = (V.dim,)``.
         U :
-            Trial space including the Dirichlet boundary data :math:`g` and the and the dof split :mat:`F_U,D_U`.
+            Trial space including the Dirichlet boundary data :math:`g` and the and the dof split :math:`F_U,D_U`.
         V :
-            Test space including the dof split :mat:`F_V,D_V`. The dirichlet dofs of the test space are removed in the final system, enforcing homogeneous Dirichlet constraints on the test space.
+            Test space including the dof split :math:`F_V,D_V`. The dirichlet dofs of the test space are removed in the final system, enforcing homogeneous Dirichlet constraints on the test space.
     
-    Returns:
-        B :
+    Returns
+    ---------
+        B : 
             Reduced system matrix :math:`\tilde{B}` on the free trial/test dofs, i.e. ``B.shape = (sum(V.dofs), sum(U.dofs))``.
         f :
             Reduced right-hand side :math:`\tilde{f}` on the free test dofs, i.e. ``f.shape = (sum(V.dofs),)``.
@@ -137,7 +141,7 @@ def assemble_system(B: ufl.form.Form | AffineObject[Mu,ufl.form.Form],
                     V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu,csr_array], AffineLinear[Mu,np.ndarray]]:
     r"""Assemble a (parametric) linear system and applying Dirichlet boundary conditions.
     
-    Just a wrapper around ``assemble_matrix``, ``assemble_vector`` and ``apply_dirichletbc`` for convenience.
+    Just a wrapper around `assemble_matrix`, `assemble_vector` and `apply_dirichletbc` for convenience.
     """
     
     return apply_dirichletbc(assemble_matrix(B), assemble_vector(f), U, V)
@@ -187,28 +191,9 @@ def weak_problem(msh: mesh.Mesh,
     and
     
     .. math::
-        f(v) = \left(f, v\right)_{\Omega} - \left(h, v\right)_{\Gamma_N}.
+        f(v) = \left(f, v\right)_{\Omega} - \left(h, v\right)_{\Gamma_N},
         
-    The discrete system is assembled first on the full spaces, resulting in a linear system
-    
-    .. math::
-        Bu = f,
-        
-    with 
-    
-    .. math:: 
-        B = \begin{bmatrix} B[F_V, F_U] & B[F_V, D_U] \\ B[D_V, F_U] & B[D_V, D_U] \end{bmatrix},\qquad
-        f = \begin{bmatrix} f[F_V] \\ f[D_V] \end{bmatrix},\qquad
-        u = \begin{bmatrix} u[F_U] \\ u[D_U] \end{bmatrix}.
-    
-    Thereby :math:`F_U` and :math:`F_V` denote the free degrees of freedom of trial and test space, respectively, while :math:`D_U` and :math:`D_V` denote the dirichlet degrees of freedom. The system is then reduced to the free degrees of freedom according to Dirichlet constraints, removing all dirichlet dofs from the test space and moving the dirichlet boundary condition on the trial space to the right-hand side, resulting in
-    
-    .. math::
-        \tilde{B}\tilde{u} = \tilde{f},\qquad
-        \tilde{B} = B[F_V, F_U],\quad
-        \tilde{f} = f[F_V] - B[F_V, D_U]g[D_U].
-
-    The final solution then reads :math:`u[F_U] = \tilde{u}` and :math:`u[D_U] = g[D_U]`.
+    where :math:`u` is restricted to the dirichlet boundary conditions :math:`g_i` on :math:`\Gamma_D^i` and the test functions :math:`v` are restricted to be zero on the dirichlet boundaries of the test space as given in ``dbdry_V``.
 
     Parameters
     ----------
@@ -238,13 +223,13 @@ def weak_problem(msh: mesh.Mesh,
     Returns
     -------
     B :
-        AffineLinear of the system matrix :math:`\tilde{B}` reduced to the free degrees of freedom.
+        System matrix of the bilinear form :math:`b` as returned by `assemble_system`.
     f :
-        AffineLinear of the reduced right-hand side :math:`\tilde{f}`.
+        Right-hand side vector of the linear form :math:`f` as returned by `assemble_system`.
     U :
-        Trial space wrapper with Dirichlet metadata.
+        Trial space with dirichlet boundary conditions.
     V :
-        Test space wrapper with Dirichlet metadata.
+        Test space with dirichlet boundary conditions.
     """
     
     tdim = msh.topology.dim
