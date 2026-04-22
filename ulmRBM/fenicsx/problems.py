@@ -1,21 +1,35 @@
 r""" Collection of some standard problems created with FEniCSx.
 
-Functions
+Problems
 ----------------
 .. autosummary::
    :toctree: generated/
    
     weak_problem
     thermal_block
+    
+Utility Functions
+-----------------
+.. autosummary::
+    :toctree: generated/
+    
+    assemble_matrix
+    assemble_vector
+    apply_dirichletbc
+    assemble_system
 """
 
 __all__ = [
+    'apply_dirichletbc',
+    'assemble_matrix',
+    'assemble_vector',
+    'assemble_system',
     'weak_problem',
     'thermal_block',
     ]
 
 import numpy as np
-from scipy.sparse import csr_array
+from scipy.sparse import csr_array, sparray
 import pyvista as pv
 from itertools import product
 
@@ -23,8 +37,110 @@ from mpi4py import MPI
 from dolfinx import mesh, fem
 import ufl
 
-from ulmRBM.affine import AffineList, AffineObject, AffineLinear
+from ulmRBM.core import Mu
+from ulmRBM.affine import AffineList, AffineObject, AffineLinear, wrap_affinelinear
 from ulmRBM.fenicsx import utils, AffineDirichletBC, FEniCSxSpaceWithDirichletBCs
+
+
+def assemble_matrix(B: ufl.form.Form | AffineList[ufl.form.Form]) -> csr_array | AffineLinear[Mu, csr_array]:
+    r"""Assemble the matrix of a (parametric) bilinear form.
+    
+    Args:
+        B:
+            (Parametric) bilinear form.
+            
+    Returns:
+        Assembled matrix representation as a (parametric) sparse array.
+    """
+    
+    assemble = lambda B: csr_array(fem.assemble_matrix(fem.form(B)).to_scipy())
+    if isinstance(B, AffineList):
+        return AffineLinear(B.compress().apply2data(assemble))
+    else:
+        return assemble(B)
+
+
+def assemble_vector(l: ufl.form.Form | AffineList[ufl.form.Form]) -> np.ndarray | AffineLinear[Mu,np.ndarray]:
+    r"""Assemble the vector of a (parametric) linear form.
+    
+    Args:
+        l:
+            (Parametric) linear form.
+            
+    Returns:
+        Assembled vector representation as a (parametric) numpy array.
+    """
+    
+    assemble = lambda l: fem.assemble_vector(fem.form(l)).array
+    if isinstance(l, AffineList):
+        return AffineLinear(l.compress().apply2data(assemble))
+    else:
+        return assemble(l)
+    
+    
+def apply_dirichletbc(B: np.ndarray | sparray | AffineList[np.ndarray | sparray], 
+                      f: np.ndarray |AffineList[np.ndarray], 
+                      U: FEniCSxSpaceWithDirichletBCs, 
+                      V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray]]:
+    r"""Apply Dirichlet boundary conditions to a linear system.
+    
+    Starting from the system assembled on the full trial/test spaces,
+
+    .. math::
+        Bu = f,\qquad u[D_U] = g[D_U],
+        
+    and denoting the free and dirichlet degrees of freedom of trial and test space by :math:`F_U, D_U` and :math:`F_V, D_V`, respectively, with :math:`g` denoting the dirchlet boundary conditions stored in ``U.bcs``, the system has the block structure
+    
+    .. math::
+        B = \begin{bmatrix} B[F_V, F_U] & B[F_V, D_U] \\
+        B[D_V, F_U] & B[D_V, D_U] \end{bmatrix},\qquad
+        f = \begin{bmatrix} f[F_V] \\ f[D_V] \end{bmatrix},\qquad
+        u = \begin{bmatrix} u[F_U] \\ u[D_U] \end{bmatrix}.
+        
+    To enforce the dirchlet boundary condition, this function reduces the system to the free degrees of freedom of trial and test space, removing all dirichlet dofs from the test space and moving the dirichlet boundary condition on the trial space to the right-hand side:
+    
+    .. math::
+        \tilde{B} u[F_U] = \tilde{f},\qquad
+        \tilde{B} = B[F_V, F_U],\qquad
+        \tilde{f} = f[F_V] - B[F_V, D_U]g[D_U].
+
+    Args:
+        B :
+            System matrix assembled on the full spaces, i.e. ``B.shape = (V.dim,U.dim)``.
+        f :
+            Right-hand side vector assembled on the full test space, i.e. ``f.shape = (V.dim,)``.
+        U :
+            Trial space including the Dirichlet boundary data :math:`g` and the and the dof split :mat:`F_U,D_U`.
+        V :
+            Test space including the dof split :mat:`F_V,D_V`. The dirichlet dofs of the test space are removed in the final system, enforcing homogeneous Dirichlet constraints on the test space.
+    
+    Returns:
+        B :
+            Reduced system matrix :math:`\tilde{B}` on the free trial/test dofs, i.e. ``B.shape = (sum(V.dofs), sum(U.dofs))``.
+        f :
+            Reduced right-hand side :math:`\tilde{f}` on the free test dofs, i.e. ``f.shape = (sum(V.dofs),)``.
+    """    
+    
+    B = wrap_affinelinear(B)
+    f = wrap_affinelinear(f)
+    
+    f = f.apply2data(       lambda fq: fq[V.dofs]             ) \
+        - sum( B.apply2data(lambda Bq: Bq[V.dofs,:][:,bc.dofs]) @ bc for bc in U.bcs )
+    B = B.apply2data(       lambda Bq: Bq[V.dofs,:][:,U.dofs] )
+    
+    return B.compress(), f.compress()
+
+
+def assemble_system(B: ufl.form.Form | AffineObject[Mu,ufl.form.Form],
+                    f: ufl.form.Form | AffineObject[Mu,ufl.form.Form],
+                    U: FEniCSxSpaceWithDirichletBCs, 
+                    V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu,csr_array], AffineLinear[Mu,np.ndarray]]:
+    r"""Assemble a (parametric) linear system and applying Dirichlet boundary conditions.
+    
+    Just a wrapper around ``assemble_matrix``, ``assemble_vector`` and ``apply_dirichletbc`` for convenience.
+    """
+    
+    return apply_dirichletbc(assemble_matrix(B), assemble_vector(f), U, V)
 
 
 def weak_problem(msh: mesh.Mesh, 
@@ -202,11 +318,11 @@ def weak_problem(msh: mesh.Mesh,
         dbdry_V = [mesh.locate_entities_boundary(msh, tdim-1, bdry) for bdry in  dbdry_V]
 
     # create dirichlet boundary conditions
-    bcs_U_D = [AffineDirichletBC(U, g, bdry) for g, bdry in zip(g, dbdry_U)]
-    bcs_V_D = [AffineDirichletBC(V, 0.0, bdry) for bdry in dbdry_V]
+    dbcs_U = [AffineDirichletBC(U, g, bdry) for g, bdry in zip(g, dbdry_U)]
+    dbcs_V = [AffineDirichletBC(V, 0.0, bdry) for bdry in dbdry_V]
     
-    U = FEniCSxSpaceWithDirichletBCs(U, bcs_U_D)
-    V = FEniCSxSpaceWithDirichletBCs(V, bcs_V_D, warn=False)
+    U = FEniCSxSpaceWithDirichletBCs(U, dbcs_U)
+    V = FEniCSxSpaceWithDirichletBCs(V, dbcs_V, warn=False)
 
     # boundary measure for the neumann boundary parts
     ds = utils.create_measure("ds", msh, tdim-1, nbdry_U)
@@ -225,23 +341,13 @@ def weak_problem(msh: mesh.Mesh,
     f_ufl = f.apply2data(lambda fq: fq * v * ufl.dx) \
             - sum(h.apply2data(lambda hq: hq * v * ds(i)) for i,h in enumerate(h))
 
-    B_ufl = B_ufl.compress()
-    f_ufl = f_ufl.compress()
-
     ########################################
-    # extract discrete system
-
-    B_full = AffineLinear(B_ufl.apply2data(lambda Bq: csr_array(fem.assemble_matrix(fem.form(Bq)).to_scipy())))
-    f_full = AffineLinear(f_ufl.apply2data(lambda lq:           fem.assemble_vector(fem.form(lq)).array))
-
+    # ASSEMBLE SYSTEM
     ########################################
-    # apply dirichlet boundary conditions
-
-    B = B_full.apply2data(lambda Bq: Bq[V.dofs,:][:,U.dofs])
-    f = f_full.apply2data(lambda lq: lq[V.dofs]) \
-        - sum(B_full.apply2data(lambda Bq: Bq[V.dofs,:][:,bc.dofs]) @ bc for bc in bcs_U_D)
     
-    return B.compress(), f.compress(), U, V
+    B, f = assemble_system(B_ufl, f_ufl, U, V)
+    
+    return B, f, U, V
 
 
 def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:

@@ -8,6 +8,7 @@ Submodules
    
    utils
    problems
+   norms
 
 Classes
 -------
@@ -25,15 +26,19 @@ Functions
     free_dofs
 """
 
-__all__ = [
+__all__ = []
+
+from ._dirichletbcs import *
+
+from . import _dirichletbcs
+__all__ += _dirichletbcs.__all__
+del _dirichletbcs
+
+
+from . import utils, problems, norms
+
+__all__ += [
     'utils',
     'problems',
-    'AffineDirichletBC',
-    'FEniCSxSpaceWithDirichletBCs',
-    'free_dofs',
+    'norms'
 ]
-
-from ._dirichletbcs import AffineDirichletBC, FEniCSxSpaceWithDirichletBCs, free_dofs
-from . import utils
-from . import problems
-

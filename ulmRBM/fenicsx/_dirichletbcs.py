@@ -1,13 +1,15 @@
 
 from numbers import Number
 import numpy as np
+from scipy.sparse import sparray, csr_array
 
 from dolfinx import fem
+import ufl
 
 from ulmRBM.fenicsx import utils
 
 from ulmRBM.core import Mu
-from ulmRBM.affine import AffineList, AffineLinear, _ConstructNew
+from ulmRBM.affine import AffineList, AffineObject, AffineLinear, _ConstructNew
 
 __all__ = [
     'utils',
