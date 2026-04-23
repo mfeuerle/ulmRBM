@@ -11,7 +11,7 @@ Utility Functions
     assemble_system
     
 Abstract Problems
-----------------
+------------------
 .. autosummary::
    :toctree: generated/
    
@@ -24,6 +24,13 @@ Elliptic Problems
     
     simple_elliptic
     thermal_block
+    
+Wave Equation Problems
+-----------------
+.. autosummary::
+    :toctree: generated/
+    
+    simple_wave
 """
 
 from ._base import *
