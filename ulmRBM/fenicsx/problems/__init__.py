@@ -28,6 +28,7 @@ Elliptic Problems
 
 from ._base import *
 from ._elliptic import *
+from ._wave import *
 
 _submodules = [
 ]

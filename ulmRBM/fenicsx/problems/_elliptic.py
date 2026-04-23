@@ -14,9 +14,11 @@ __all__ = [
     'simple_elliptic',
 ]
 
+# def simple_elliptic_operator(dim: int) -> tuple[AffineObject, AffineObject, AffineObject]:
+
 
 def simple_elliptic(n: list[int]) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
-    r"""Create a simple elliptic problem on the unit square.
+    r"""Parametric elliptic problem on the unit square.
 
     The model uses `weak_problem` with
 
@@ -28,10 +30,13 @@ def simple_elliptic(n: list[int]) -> tuple[AffineLinear, AffineLinear, FEniCSxSp
     \partial\Omega` and :math:`\Gamma_N = \emptyset` with dirichlet data
     :math:`g=0`.
 
-    Parameters
-    ----------
-    n : 
-        Number of mesh cells in each spatial direction, where ``len(n)`` is the spatial dimension.
+    Args:
+        n : 
+            Number of mesh cells in each spatial direction, where ``len(n)`` is the spatial dimension.
+            
+    Returns
+    -------
+    See `weak_problem` for details on the return values.
     """
     
     if len(n) == 1:

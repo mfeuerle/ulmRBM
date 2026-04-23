@@ -1,12 +1,3 @@
-
-__all__ = [
-    'apply_dirichletbc',
-    'assemble_matrix',
-    'assemble_vector',
-    'assemble_system',
-    'weak_problem',
-    ]
-
 import numpy as np
 from scipy.sparse import csr_array, sparray
 from dolfinx import mesh, fem
@@ -15,6 +6,15 @@ import ufl
 from ulmRBM.core import Mu
 from ulmRBM.affine import AffineList, AffineObject, AffineLinear, wrap_affinelinear
 from ulmRBM.fenicsx import utils, AffineDirichletBC, FEniCSxSpaceWithDirichletBCs
+
+
+__all__ = [
+    'apply_dirichletbc',
+    'assemble_matrix',
+    'assemble_vector',
+    'assemble_system',
+    'weak_problem',
+    ]
 
 
 def assemble_matrix(B: ufl.form.Form | AffineList[ufl.form.Form]) -> csr_array | AffineLinear[Mu, csr_array]:
@@ -159,14 +159,14 @@ def weak_problem(msh: mesh.Mesh,
     with 
     
     .. math::
-        b(u, v) = -\left(A\nabla u, \nabla v\right)_{\Omega}
-        + \left(b\cdot\nabla u, v\right)_{\Omega}
-        + \left(cu, v\right)_{\Omega},
+        b(u, v) = -\left(A\nabla u, \nabla v\right)_{L^2(\Omega)}
+        + \left(b\cdot\nabla u, v\right)_{L^2(\Omega)}
+        + \left(cu, v\right)_{L^2(\Omega)},
         
     and
     
     .. math::
-        f(v) = \left(f, v\right)_{\Omega} - \left(h, v\right)_{\Gamma_N},
+        f(v) = \left(f, v\right)_{L^2(\Omega)} - \left(h, v\right)_{L^2(\partial\Omega)},
         
     where :math:`u` is restricted to the dirichlet boundary conditions :math:`g_i` on :math:`\Gamma_D^i` and the test functions :math:`v` are restricted to be zero on the dirichlet boundaries of the test space as given in ``dbdry_V``.
 
