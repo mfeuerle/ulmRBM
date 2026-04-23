@@ -58,12 +58,43 @@ Residual Calculators
     AffineResidual
 """
 
-__all__ = []
+"""
+Adding some specific FEniCSx related functionality.
+
+Submodules
+----------
+.. autosummary::
+   :toctree: generated/
+   
+   utils
+   problems
+   norms
+
+Classes
+-------
+.. autosummary::
+   :toctree: generated/
+   
+    AffineDirichletBC
+    FEniCSxSpaceWithDirichletBCs
+    
+Functions
+----------------
+.. autosummary::
+   :toctree: generated/
+   
+    free_dofs
+"""
 
 from ._constants import *
 from ._residual import *
 from ._rom import *
 
-from . import _constants, _residual, _rom
-__all__ += _constants.__all__ + _residual.__all__ + _rom.__all__
-del _constants, _residual, _rom
+_submodules = [
+]
+
+import importlib as _importlib
+for _submodule in _submodules:
+    _importlib.import_module(f".{_submodule}", __package__)
+
+__all__ = [s for s in dir() if not s.startswith('_')]

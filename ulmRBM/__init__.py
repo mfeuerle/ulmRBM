@@ -18,13 +18,7 @@ Modules
     reductors
 """
 
-from ._dirty_patches import apply_patches
-apply_patches()
-del apply_patches
-
-from . import affine, core, fom, products, rom, solver, reductors
-
-__all__ = [
+_submodules = [
     'affine',
     'core',
     'fom',
@@ -36,10 +30,17 @@ __all__ = [
 
 try:
     from . import fenicsx
-    __all__.append('fenicsx')
     __doc__ += "\tfenicsx"
 except ImportError:
     pass
 
+import importlib as _importlib
+for _submodule in _submodules:
+    _importlib.import_module(f".{_submodule}", __package__)
 
-# add the decorators @override and @extend for functions and methods
+__all__ = [s for s in dir() if not s.startswith('_')]
+
+
+from ._dirty_patches import apply_patches
+apply_patches()
+del apply_patches

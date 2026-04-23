@@ -26,19 +26,16 @@ Functions
     free_dofs
 """
 
-__all__ = []
-
 from ._dirichletbcs import *
 
-from . import _dirichletbcs
-__all__ += _dirichletbcs.__all__
-del _dirichletbcs
-
-
-from . import utils, problems, norms
-
-__all__ += [
+_submodules = [
     'utils',
     'problems',
     'norms'
 ]
+
+import importlib as _importlib
+for _submodule in _submodules:
+    _importlib.import_module(f".{_submodule}", __package__)
+
+__all__ = [s for s in dir() if not s.startswith('_')]

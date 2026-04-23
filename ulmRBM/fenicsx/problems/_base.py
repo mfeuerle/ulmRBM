@@ -1,23 +1,3 @@
-r""" Collection of some standard problems created with FEniCSx.
-
-Problems
-----------------
-.. autosummary::
-   :toctree: generated/
-   
-    weak_problem
-    thermal_block
-    
-Utility Functions
------------------
-.. autosummary::
-    :toctree: generated/
-    
-    assemble_matrix
-    assemble_vector
-    apply_dirichletbc
-    assemble_system
-"""
 
 __all__ = [
     'apply_dirichletbc',
@@ -25,15 +5,10 @@ __all__ = [
     'assemble_vector',
     'assemble_system',
     'weak_problem',
-    'thermal_block',
     ]
 
 import numpy as np
 from scipy.sparse import csr_array, sparray
-import pyvista as pv
-from itertools import product
-
-from mpi4py import MPI
 from dolfinx import mesh, fem
 import ufl
 
@@ -160,8 +135,8 @@ def weak_problem(msh: mesh.Mesh,
                  C_space: fem.FunctionSpace | None = None, 
                  F_space: fem.FunctionSpace | None = None, 
                  H_spaces: list[fem.FunctionSpace] | None = None) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
-    r"""Build the FEM weak formulation of a general second-order operator with
-    inhomogeneous Dirichlet and Neumann boundary data.
+    r"""Weak formulation of a general 2nd-order operator with
+    inhomogeneous Dirichlet and Neumann boundary data. Suitable e.g. for elliptic problems or the wave equation.
 
     Consider the second order PDE
 
@@ -335,75 +310,3 @@ def weak_problem(msh: mesh.Mesh,
     return B, f, U, V
 
 
-def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
-    r"""Create the parametric thermal block problem.
-
-    The domain is the unit square :math:`\Omega = (0,1)^2`, partitioned into
-    :math:`n_{\mathrm{blocks},1} \times n_{\mathrm{blocks},2}` rectangular blocks.
-    The model uses
-
-    .. math::
-        b(x) = 0, \qquad c(x) = 0, \qquad f(x) = 1,
-
-    and a blockwise affine-parametric diffusion tensor
-
-    .. math::
-        A_\mu(x) = -\sum_{q=1}^{Q} \theta_q(\mu)\,\chi_q(x)\,I,
-
-    where :math:`\chi_q` are indicator functions of the blocks and
-    :math:`\theta_q(\mu) = \mu_q`.
-
-    All exterior facets are treated as Dirichlet boundaries for 
-    trial and test spaces, i.e. :math:`\Gamma_D = \partial\Omega`
-    and :math:`\Gamma_N = \emptyset` with dirichlet data :math:`g=0`.
-
-    Parameters
-    ----------
-    nh : 
-        Number of mesh cells in each spatial direction.
-    nblocks : 
-        Number of thermal blocks in each spatial direction.
-    plot :
-        If ``True``, visualize all block indicator functions :math:`\chi_q`.
-
-    Returns
-    -------
-    See `weak_problem` for details on the return values.
-    """
-    msh = mesh.create_rectangle(MPI.COMM_WORLD, [[0, 0], [1, 1]], nh)
-    gdim = msh.geometry.dim
-    
-    dbdry = [lambda x: np.ones(x.shape[1], dtype=bool)]
-    
-    f = AffineObject([1.0], [1.0])
-    g = [AffineObject([0.0], [1.0])]
-    h = []
-    
-    blocks = [np.linspace(0, 1, nblocks[i]+1) for i in range(2)]
-    
-    def chi(x, block_id):
-        value = np.ones(x.shape[1], dtype=bool)
-        for i,id in enumerate(block_id):
-            if id != 0:
-                value &= blocks[i][id] <= x[i]
-            if id != nblocks[i] - 1:
-                value &= x[i] < blocks[i][id+1]
-        return value
-
-    A = AffineObject()
-    for idx in product(*[range(n) for n in nblocks]):
-        A += [(lambda mu, idx=idx: mu[idx], lambda x, idx=idx: -np.eye(gdim).reshape(-1,1) * chi(x, idx) )]
-    b = AffineObject([0.0], [np.zeros(gdim)])
-    c = AffineObject([0.0], [0.0])
-        
-    if plot:
-        plotter = pv.Plotter(shape=(nblocks))
-        L2 = fem.functionspace(msh, ("DG", 0))
-        for idx in product(range(nblocks[0]), range(nblocks[1])):
-            plotter.subplot(*idx)
-            tmp = fem.Function(utils.change_element(L2, shape=()))
-            tmp.interpolate(lambda x: chi(x, idx))
-            utils.plot_pyvista(tmp.x.array, utils.change_element(L2, shape=()), f"chi {idx}", plotter)
-        plotter.show(interactive_update=True)
-    
-    return weak_problem(msh, (A,b,c), (f,g,h), dbdry)
