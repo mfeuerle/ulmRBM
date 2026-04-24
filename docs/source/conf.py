@@ -103,4 +103,5 @@ intersphinx_mapping = {
     'scipy': ('http://docs.scipy.org/doc/scipy/reference', None),
     'kron': ('https://mfeuerle.github.io/kron/', None),
     'dolfinx': ('https://docs.fenicsproject.org/dolfinx/v0.10.0/python/', None),
+    'ufl': ('https://docs.fenicsproject.org/ufl/2025.2.1', None),
 }

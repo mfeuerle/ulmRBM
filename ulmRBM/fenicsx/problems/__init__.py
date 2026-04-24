@@ -26,7 +26,7 @@ Elliptic Problems
     thermal_block
     
 Wave Equation Problems
------------------
+----------------------
 .. autosummary::
     :toctree: generated/
     

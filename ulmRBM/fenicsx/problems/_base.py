@@ -17,7 +17,7 @@ __all__ = [
     ]
 
 
-def assemble_matrix(B: ufl.form.Form | AffineList[ufl.form.Form]) -> csr_array | AffineLinear[Mu, csr_array]:
+def assemble_matrix(B: ufl.Form | AffineList[ufl.Form]) -> csr_array | AffineLinear[Mu, csr_array]:
     r"""Assemble the matrix of a (parametric) bilinear form.
     
     Args:
@@ -35,7 +35,7 @@ def assemble_matrix(B: ufl.form.Form | AffineList[ufl.form.Form]) -> csr_array |
         return assemble(B)
 
 
-def assemble_vector(l: ufl.form.Form | AffineList[ufl.form.Form]) -> np.ndarray | AffineLinear[Mu,np.ndarray]:
+def assemble_vector(l: ufl.Form | AffineList[ufl.Form]) -> np.ndarray | AffineLinear[Mu,np.ndarray]:
     r"""Assemble the vector of a (parametric) linear form.
     
     Args:
@@ -54,7 +54,7 @@ def assemble_vector(l: ufl.form.Form | AffineList[ufl.form.Form]) -> np.ndarray 
     
     
 def apply_dirichletbc(B: np.ndarray | sparray | AffineList[np.ndarray | sparray], 
-                      f: np.ndarray |AffineList[np.ndarray], 
+                      f: np.ndarray | AffineList[np.ndarray], 
                       U: FEniCSxSpaceWithDirichletBCs, 
                       V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray]]:
     r"""Apply Dirichlet boundary conditions to a linear system.
@@ -110,8 +110,8 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineList[np.ndarray | sparray]
     return B.compress(), f.compress()
 
 
-def assemble_system(B: ufl.form.Form | AffineObject[Mu,ufl.form.Form],
-                    f: ufl.form.Form | AffineObject[Mu,ufl.form.Form],
+def assemble_system(B: ufl.Form | AffineList[ufl.Form],
+                    f: ufl.Form | AffineList[ufl.Form],
                     U: FEniCSxSpaceWithDirichletBCs, 
                     V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu,csr_array], AffineLinear[Mu,np.ndarray]]:
     r"""Assemble a (parametric) linear system and applying Dirichlet boundary conditions.
@@ -134,7 +134,7 @@ def weak_problem(msh: mesh.Mesh,
                  B_space: fem.FunctionSpace | None = None, 
                  C_space: fem.FunctionSpace | None = None, 
                  F_space: fem.FunctionSpace | None = None, 
-                 H_spaces: list[fem.FunctionSpace] | None = None) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+                 H_spaces: list[fem.FunctionSpace] | None = None) -> tuple[AffineList[ufl.Form], AffineList[ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Weak formulation of a general 2nd-order operator with
     inhomogeneous Dirichlet and Neumann boundary data. Suitable e.g. for elliptic problems or the wave equation.
 
@@ -169,6 +169,8 @@ def weak_problem(msh: mesh.Mesh,
         f(v) = \left(f, v\right)_{L^2(\Omega)} - \left(h, v\right)_{L^2(\partial\Omega)},
         
     where :math:`u` is restricted to the dirichlet boundary conditions :math:`g_i` on :math:`\Gamma_D^i` and the test functions :math:`v` are restricted to be zero on the dirichlet boundaries of the test space as given in ``dbdry_V``.
+    
+    To assemble the discrete system, follow up with `assemble_system`.
 
     Parameters
     ----------
@@ -198,9 +200,9 @@ def weak_problem(msh: mesh.Mesh,
     Returns
     -------
     B :
-        System matrix of the bilinear form :math:`b` as returned by `assemble_system`.
+        Bilinear form :math:`b`, see also `assemble_matrix` and `assemble_system`.
     f :
-        Right-hand side vector of the linear form :math:`f` as returned by `assemble_system`.
+        Linear form :math:`f`, see also `assemble_vector` and `assemble_system`.
     U :
         Trial space with dirichlet boundary conditions.
     V :
@@ -301,6 +303,7 @@ def weak_problem(msh: mesh.Mesh,
     f_ufl = f.apply2data(lambda fq: fq * v * ufl.dx) \
             - sum(h.apply2data(lambda hq: hq * v * ds(i)) for i,h in enumerate(h))
 
+    return B_ufl, f_ufl, U, V
     ########################################
     # ASSEMBLE SYSTEM
     ########################################

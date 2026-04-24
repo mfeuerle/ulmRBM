@@ -3,12 +3,13 @@ from scipy.sparse.linalg import spsolve
 import pyvista as pv
 
 from ulmRBM.fenicsx import utils
-from ulmRBM.fenicsx.problems import thermal_block
+from ulmRBM.fenicsx.problems import thermal_block, assemble_system
 
 
 nblocks = [2, 3]
 
 B, f, U, V = thermal_block([20, 20], nblocks, plot=True)
+B, f = assemble_system(B, f, U, V)
 
 def solve(mu):
     u = spsolve(B(mu), f(mu))

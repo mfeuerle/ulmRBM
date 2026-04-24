@@ -4,8 +4,9 @@ from itertools import product
 
 from mpi4py import MPI
 from dolfinx import mesh, fem
+import ufl
 
-from ulmRBM.affine import AffineObject, AffineLinear
+from ulmRBM.affine import AffineObject, AffineList
 from ulmRBM.fenicsx import utils, FEniCSxSpaceWithDirichletBCs
 from ulmRBM.fenicsx.problems import weak_problem
 
@@ -17,7 +18,7 @@ __all__ = [
 # def simple_elliptic_operator(dim: int) -> tuple[AffineObject, AffineObject, AffineObject]:
 
 
-def simple_elliptic(n: list[int]) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+def simple_elliptic(n: list[int]) -> tuple[AffineList[ufl.Form], AffineList[ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Parametric elliptic problem on the unit square.
 
     The model uses `weak_problem` with
@@ -63,7 +64,7 @@ def simple_elliptic(n: list[int]) -> tuple[AffineLinear, AffineLinear, FEniCSxSp
     return weak_problem(msh, (A,b,c), (f,g,h), dbdry)
 
 
-def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False) -> tuple[AffineList[ufl.Form], AffineList[ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Create the parametric thermal block problem.
 
     The domain is the unit square :math:`\Omega = (0,1)^2`, partitioned into

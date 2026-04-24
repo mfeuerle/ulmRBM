@@ -2,8 +2,9 @@ import numpy as np
 
 from mpi4py import MPI
 from dolfinx import mesh
+import ufl
 
-from ulmRBM.affine import AffineList, AffineObject, AffineLinear
+from ulmRBM.affine import AffineList, AffineObject
 from ulmRBM.fenicsx import utils, FEniCSxSpaceWithDirichletBCs
 from ulmRBM.fenicsx.problems import weak_problem
 
@@ -18,7 +19,7 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
                 u0: float | AffineList = 0, 
                 u1: float | AffineList = 0, 
                 g: float | AffineList = 0, 
-                exact_sol = None, exact_mu: float = 1.0) -> tuple[AffineLinear, AffineLinear, FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+                exact_sol = None, exact_mu: float = 1.0) -> tuple[AffineList[ufl.Form], AffineList[ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Parametric wave problem.
     
     Let :math:`\mu>0` be the wave speed. For :math:`I=(0,T)` and :math:`\Omega=\subset \mathbb{R}^d`, :math:`d\in\{1,2\}` consider the wave equation

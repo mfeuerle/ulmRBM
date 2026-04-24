@@ -7,7 +7,7 @@ from dolfinx import mesh
 
 from ulmRBM.affine import AffineObject
 from ulmRBM.fenicsx import utils
-from ulmRBM.fenicsx.problems import weak_problem
+from ulmRBM.fenicsx.problems import weak_problem, assemble_system
 
 
 Omega = np.array([[0.0, 0.0], [2.0, 2.0]])
@@ -32,6 +32,7 @@ else:
             [AffineObject([1.0], [1.0])])  # h: list of neumann boundary conditions
     
 B, f, U, V = weak_problem(msh, (A,b,c), data, dbdry, nbdry)
+B, f = assemble_system(B, f, U, V)
 
 def solve(mu):
     u = spsolve(B(mu), f(mu))
