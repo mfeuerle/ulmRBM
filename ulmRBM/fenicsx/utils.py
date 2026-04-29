@@ -201,7 +201,7 @@ def plot_pyvista(u: np.ndarray, space: fem.FunctionSpace, name: str, plotter: pv
     
     
 def isclose(x: np.ndarray, reference_points: np.ndarray, *args, **kwargs) -> np.ndarray[bool]:
-    """Check which points in x are numerically close to at least on target point in at least one coordinate.
+    r"""Check which points in x are numerically close to at least on target point in at least one coordinate.
     
     Args:
         x : 
