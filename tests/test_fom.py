@@ -128,7 +128,7 @@ class TestFOMInitialization:
 
     def test_basic_initialization(self, affine_matrix, affine_vector, param_product_U, param_product_V):
         fom = FOM(affine_matrix, affine_vector, param_product_U, param_product_V)
-        assert fom.dim == (U_dim, V_dim)
+        assert fom.dim == (U_dim, V_dim, None)
         assert fom.U is param_product_U
         assert fom.V is param_product_V
         assert isinstance(fom.solver, Solver)

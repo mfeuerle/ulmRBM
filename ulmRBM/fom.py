@@ -38,20 +38,28 @@ class FOM(Generic[Mu]):
     
     .. math::
         B(\mu) u(\mu) = f(\mu)
+        
+    with an optional output of interest functional
     
-    where :math:`B(\mu) \in \mathbb{R}^{m \times n}` is the system matrix and :math:`f(\mu) \in \mathbb{R}^{m}` is the right-hand side, both with affine parameter dependence, and :math:`u(\mu) \in \mathbb{R}^n` is the unknown solution vector.
+    .. math::
+        s(\mu) = l(\mu) u(\mu),
+    
+    where :math:`B(\mu) \in \mathbb{R}^{m \times n}` is the system matrix, :math:`f(\mu) \in \mathbb{R}^{m}` is the right-hand side and :math:`l(\mu) \in \mathbb{R}^{p \times n}` is the output of interest functional, all with affine parameter dependence, and :math:`u(\mu) \in \mathbb{R}^n` is the unknown solution vector and :math:`s(\mu)\in \mathbb{R}^p` the optional output of interest. 
     
     Typically, :math:`B(\mu)` is a discretization of a parametric operator :math:`B_\mu : U \to V'`, :math:`f(\mu)` a discretization of a parametric functional :math:`f_\mu \in V'`, and thus :math:`u(\mu)` is a discrete approximation of the solution :math:`u_\mu \in U` of the parametric operator equation :math:`B_\mu u_\mu = f_\mu` in :math:`V'`. Thereby, :math:`U` and :math:`V` denote the trial and test spaces, equipped with (possibly parameter dependent) inner products :math:`(\cdot, \cdot)_U` and :math:`(\cdot, \cdot)_V`, respectively.
     """
     
-    dim: tuple[int, int]
-    r"""Dimensions :math:`(m,n)` of the system matrix :math:`B(\mu)`, where :math:`m` is the discrete test space dimension and :math:`n` is the discrete trial space dimension."""
+    dim: tuple[int, int, int | None]
+    r"""Dimensions :math:`(m,n,p)` of the system matrix :math:`B(\mu)` and output :math:`s(\mu)`, where :math:`m` is the discrete test space dimension, :math:`n` is the discrete trial space dimension, and :math:`p` is the output dimension. If no output of interest is given, :math:`p` is ``None``."""
     
     B: AffineLinear[Mu, Matrix]
     r"""Affine decomposition of the system matrix :math:`B(\mu) = \sum_{q=1}^Q \theta_q^B(\mu) B_q`."""
     
     f: AffineLinear[Mu, Vector]
     r"""Affine decomposition of the right-hand side :math:`f(\mu) = \sum_{q=1}^{Q_f} \theta_q^f(\mu) f_q`."""
+    
+    l: AffineLinear[Mu, Matrix] | None
+    r"""Affine decomposition of the output(s) of interest functional, if any :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`."""
         
     U: InnerProduct[Mu]
     r"""Inner product :math:`(\cdot, \cdot)_U` on the trial space :math:`U`."""
@@ -73,7 +81,8 @@ class FOM(Generic[Mu]):
     
     @property
     def dim(self):
-        return self.B.shape
+        p = self.l.shape[0] if self.l is not None else None
+        return (*self.B.shape,p)
     
     @property
     def solver(self) -> Solver:
@@ -88,6 +97,7 @@ class FOM(Generic[Mu]):
                  f: AffineLinear[Mu, Vector] | Vector,
                  U: InnerProduct[Mu],
                  V: InnerProduct[Mu],
+                 l: AffineLinear[Mu, Matrix] | Matrix | None = None,
                  stability: Callable[[Mu, FOM[Mu]], float] | float | None = None,
                  continuity: Callable[[Mu, FOM[Mu]], float] | float | None = None,
                  solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = IterativeSolver(),
@@ -102,6 +112,8 @@ class FOM(Generic[Mu]):
                 Inner product on the trial space.
             V:
                 Inner product on the test space.
+            l:
+                Optional affine decomposition of the output(s) of interest functional.
             stability:
                 Optional function (with signature ``(mu,fom)``) or constant to compute the stability constant at a given parameter value. If ``None``, the constant is computed via eigenvalue problems.
             continuity:
@@ -118,9 +130,12 @@ class FOM(Generic[Mu]):
             raise ValueError("B and U must have compatible dimensions.")
         if B.shape[0] != V.shape[0]:
                 raise ValueError("B and V must have compatible dimensions.")
+        if l is not None and l.shape[1] != U.shape[0]:
+            raise ValueError("l and U must have compatible dimensions.")
         
         self.B = wrap_affinelinear(B).compress()
         self.f = wrap_affinelinear(f).compress()
+        self.l = wrap_affinelinear(l).compress() if l is not None else None
         self.U = U
         self.V = V
         self.solver = solver
@@ -167,11 +182,11 @@ class FOM(Generic[Mu]):
             warn("Default stability constant computation for non-square B is inefficient, consider providing a custom stability function.")
             BVinvB = self.V.dual.restrict(self.B(mu))
         eigsh_opts['A'] = BVinvB(mu)
-        eigsh_opts['return_eigenvectors'] = False
         eigsh_opts['M'] = self.U(mu)
         eigsh_opts['k'] = 1
-        eigsh_opts['which'] = 'LM'
         eigsh_opts['sigma'] = 0.0
+        eigsh_opts['which'] = 'LM'
+        eigsh_opts['return_eigenvectors'] = False
         val = eigsh(**eigsh_opts)[0]
         return np.sqrt(val)  
             
@@ -201,11 +216,11 @@ class FOM(Generic[Mu]):
         eigsh_opts = {}
         BVinvB = self.V.dual.restrict(self.B(mu))
         eigsh_opts['A'] = BVinvB(mu)
-        eigsh_opts['return_eigenvectors'] = False
         eigsh_opts['M'] = self.U(mu)
         eigsh_opts['Minv'] = self.U.dual(mu)
         eigsh_opts['k'] = 1
         eigsh_opts['which'] = 'LM'
+        eigsh_opts['return_eigenvectors'] = False
         val = eigsh(**eigsh_opts)[0]
         return np.sqrt(val)
         
@@ -218,9 +233,27 @@ class FOM(Generic[Mu]):
                 Parameter value at which to solve the system.
         
         Returns:
-            Solution vector :math:`u(\mu) \in \mathbb{R}^n`.
+            State vector :math:`u(\mu) \in \mathbb{R}^n`.
         """
         return self.solver(self.B(mu), self.f(mu))
+    
+    def output(self, mu: Mu, u: Vector | None = None) -> Vector:
+        r"""
+        Compute the output of interest :math:`s(\mu) = l(\mu) u(\mu)` at the given parameter value.
+        
+        Args:
+            mu:
+                Parameter value at which to compute the output.
+            u:
+                Optional state vector to use instead of solving for :math:`u(\mu)`. If ``None``, the state is computed via :meth:`solve`.
+        
+        Returns:
+            Output of interest :math:`s(\mu) \in \mathbb{R}^p`.
+        """
+        if self.l is None:
+            raise ValueError("No output functional defined for this model.")
+        if u is None: u = self.solve(mu)
+        return self.l(mu) @ u
     
     
     def supremizer(self, u: Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
@@ -248,9 +281,8 @@ class FOM(Generic[Mu]):
         if self.V.is_parametric:
             return lambda mu: self.V.dual.riesz(mu, self.B(mu) @ u)
         else:
-            S = self.B @ u
-            return S.apply2data(lambda Bu_q: self.V.dual.riesz(NO_MU, Bu_q))
-
+            Bu = self.B @ u
+            return Bu.apply2data(lambda Bu_q: self.V.dual.riesz(NO_MU, Bu_q))
 
 class GalerkinFOM(FOM[Mu]):
     r"""
@@ -271,6 +303,7 @@ class GalerkinFOM(FOM[Mu]):
                  B: AffineLinear[Mu, Matrix] | Matrix,
                  f: AffineLinear[Mu, Vector] | Vector, 
                  U: InnerProduct[Mu],
+                 l: AffineLinear[Mu, Matrix] | Matrix | None = None,
                  stability: Callable[[Mu],float] | float | None = None,
                  continuity: Callable[[Mu],float] | float | None = None,
                  solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = IterativeSolver()):
@@ -282,6 +315,8 @@ class GalerkinFOM(FOM[Mu]):
                 Affine decomposition of the right-hand side.
             U:
                 Inner product on the trial and test space.
+            l:
+                Optional affine decomposition of the output(s) of interest functional.
             stability:
                 Optional function or constant to compute the stability constant at a given parameter value. If ``None``, the constant is computed via eigenvalue problems.
             continuity:
@@ -289,7 +324,7 @@ class GalerkinFOM(FOM[Mu]):
             solver:
                 Solver for the linear system. Defaults to a iterative solver.
         """
-        super().__init__(B, f, U, U, stability, continuity, solver)
+        super().__init__(B, f, U, U, l, stability, continuity, solver)
         
     def _stability(self, mu: Mu) -> float:
         eigsh_opts = {}

@@ -34,12 +34,20 @@ class ROM(FOM[Mu]):
     
     .. math::
         B_N(\mu) u_N = f_N(\mu)
+        
+    with an optional output of interest functional
     
-    where :math:`B_N(\mu) = V_N^T B(\mu) U_N` and :math:`f_N(\mu) = V_N^T f(\mu)`,
+    .. math::
+        s_N(\mu) = l_N(\mu) u_N,
+    
+    where :math:`B_N(\mu) = V_N^T B(\mu) U_N`, :math:`f_N(\mu) = V_N^T f(\mu)`
+    and :math:`l_N(\mu) = l(\mu) U_N`,
     with :math:`U_N \in \mathbb{R}^{n \times N}` the reduced trial basis and
     :math:`V_N \in \mathbb{R}^{m \times M}` the reduced test basis.
     Then, :math:`u_N \in \mathbb{R}^N` is the reduced solution vector and :math:`U_N u_N \in \mathbb{R}^n`
-    the corresponding approximation in the full-order solution.
+    the corresponding approximation in the full-order solution, while :math:`s_N(\mu)\in\mathbb{R}^p` 
+    are the output(s) of interest of the reduced solution. 
+    The reduced test space depends affinely on the parameter :math:`\mu`, while the trial space is parameter-independent.
     The reduced test space depends affinely on the parameter :math:`\mu`, while the trial space is parameter-independent.
     """
     
@@ -172,11 +180,13 @@ class ROM(FOM[Mu]):
     def _assemble_rom(self):
         self.B = None
         self.f = None
+        self.l = None
         if self.V_basis is not None:
             self.f = self.V_basis.T @ self.fom.f
             if self.U_basis is not None:
                 self.B = self.V_basis.T @ self.fom.B @ self.U_basis
-                
+        if self.U_basis is not None and self.fom.l is not None:
+            self.l = self.fom.l @ self.U_basis        
     
     def add_basis(self, U_basis: Vector | None = None, V_basis: AffineLinear[Mu, Vector] | None = None):
         """
