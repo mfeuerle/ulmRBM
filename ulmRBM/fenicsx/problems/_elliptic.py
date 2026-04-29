@@ -105,7 +105,7 @@ def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False)
     dbdry = [lambda x: np.ones(x.shape[1], dtype=bool)]
     
     f = AffineObject([1.0], [1.0])
-    g = [AffineObject([0.0], [1.0])]
+    g = [AffineObject([0.0], [0.0])]
     h = []
     
     blocks = [np.linspace(0, 1, nblocks[i]+1) for i in range(2)]

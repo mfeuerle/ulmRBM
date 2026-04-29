@@ -304,12 +304,5 @@ def weak_problem(msh: mesh.Mesh,
             - sum(h.apply2data(lambda hq: hq * v * ds(i)) for i,h in enumerate(h))
 
     return B_ufl, f_ufl, U, V
-    ########################################
-    # ASSEMBLE SYSTEM
-    ########################################
-    
-    B, f = assemble_system(B_ufl, f_ufl, U, V)
-    
-    return B, f, U, V
 
 

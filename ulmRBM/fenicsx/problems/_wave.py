@@ -85,7 +85,7 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
     if len(n) == 2:
         msh = mesh.create_rectangle(MPI.COMM_WORLD, Q, n)
     elif len(n) == 3:
-        msh = mesh.create_unit_cube(MPI.COMM_WORLD, Q, n)
+        msh = mesh.create_box(MPI.COMM_WORLD, Q, n)
     else:
         raise ValueError("Only 1D, 2D in space are supported.")
     
@@ -100,10 +100,14 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
     if exact_sol is not None:
         data = (exact_sol, exact_mu)
     else:
-        if np.isscalar(f):  f  = AffineObject([f],  [1.0])  # right-hand side
-        if np.isscalar(u0): u0 = AffineObject([u0], [1.0])  # initial condition u(0)
-        if np.isscalar(u1): u1 = AffineObject([u1], [1.0])  # initial velocity u_t(0)
-        if np.isscalar(g):  g  = AffineObject([g],  [1.0])  # boundary condition on IxGamma
+        if not isinstance(f, AffineList): 
+            f = AffineObject([1.0], [f])  # right-hand side
+        if not isinstance(u0, AffineList): 
+            u0 = AffineObject([1.0], [u0])  # initial condition u(0)
+        if not isinstance(u1, AffineList): 
+            u1 = AffineObject([1.0], [u1])  # initial velocity u_t(0)
+        if not isinstance(g, AffineList): 
+            g = AffineObject([1.0], [g])  # boundary condition on IxGamma
         data = (f, [u0, g], [-u1])
     
     A = AffineObject([1.0], [np.diag([1.0] + (gdim-1)*[0.0])])  # u_tt
