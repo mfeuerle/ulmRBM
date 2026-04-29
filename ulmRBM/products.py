@@ -9,7 +9,6 @@ Abstract Inner Product Classes
      InnerProduct
      InverseInnerProduct
      RestrictedInnerProduct
-     OperatorInnerProduct
      
 Concrete Inner Product Classes
 ------------------------------
@@ -18,6 +17,7 @@ Concrete Inner Product Classes
     
      EuclideanInnerProduct
      MatrixInnerProduct
+     OperatorInnerProduct
      
 Funtions
 ------------------------------
@@ -179,7 +179,9 @@ class InnerProduct(ParametricLinear[Mu, Matrix]):
                 Second vector(s) of shape ``(n,)`` or ``(n, l)``. If ``None``, defaults to ``u``
                 (computing self-inner-products).
         
-        Returns:
+        Returns
+        -------
+        numpy.ndarray | float:
             - If both ``u`` and ``v`` are 1D: scalar inner product value.
             - If ``u`` is 1D and ``v`` is 2D (or vice versa): 1D array of inner products.
             - If both are 2D: ``(k,l)`` matrix where entry ``[i, j]`` corresponds to :math:`(u_i, v_j)_V`.
@@ -196,7 +198,9 @@ class InnerProduct(ParametricLinear[Mu, Matrix]):
             u: 
                 Vector(s) of shape ``(n,)`` or ``(n, k)`` for which to compute the norm(s).
         
-        Returns:
+        Returns
+        -------
+        numpy.ndarray | float:
             - If ``u`` is 1D: scalar norm value.
             - If ``u`` is 2D: 1D array of length ``k``.
         """
@@ -215,9 +219,6 @@ class InnerProduct(ParametricLinear[Mu, Matrix]):
         
         .. math::
             (\hat{u}, \hat{v})_{V_N} = (V_N \hat{u}, V_N \hat{v})_V
-        
-        The dual inner product is automatically constructed for the restricted space if this
-        inner product has an explicitly set dual.
         
         Args:
             basis: 
@@ -306,7 +307,7 @@ class InverseInnerProduct(InnerProduct[Mu]):
                 The inner product to invert.
             solver: 
                 Solver for computing :math:`M_V^{-1} v`. Can be a :class:`Solver` instance,
-                a callable with signature ``(A, b) -> x``, or ``None`` to use the default solver.
+                a callable with signature ``(A, b, x0=None) -> x``, or ``None`` to use the default solver.
                 If ``None``, a warning is issued when the solver is used accessed.
         """
         
