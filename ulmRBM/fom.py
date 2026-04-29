@@ -372,11 +372,11 @@ class GalerkinFOM(FOM[Mu]):
         eigsh_opts = {}
         B = self.B(mu)
         eigsh_opts['A'] = 0.5 * (B.T + B)    
-        eigsh_opts['return_eigenvectors'] = False
         eigsh_opts['M'] = self.U(mu)
         eigsh_opts['k'] = 1
-        eigsh_opts['which'] = 'LM'
         eigsh_opts['sigma'] = 0.0
+        eigsh_opts['which'] = 'LM'
+        eigsh_opts['return_eigenvectors'] = False
         val = eigsh(**eigsh_opts)[0]
         return val
     
@@ -384,10 +384,10 @@ class GalerkinFOM(FOM[Mu]):
         eigsh_opts = {}
         B = self.B(mu)
         eigsh_opts['A'] = 0.5 * (B.T + B)
-        eigsh_opts['return_eigenvectors'] = False
         eigsh_opts['M'] = self.U(mu)
         eigsh_opts['Minv'] = self.U.dual(mu) 
         eigsh_opts['k'] = 1
         eigsh_opts['which'] = 'LM'
+        eigsh_opts['return_eigenvectors'] = False
         val = eigsh(**eigsh_opts)[0]
         return val

@@ -222,7 +222,7 @@ class AffineResidual(ResidualCalculator[Mu]):
     R: np.ndarray
     r"""Precomputed Gram matrix of the residual components :math:`R_{ij} = (r_i, r_j)_{V'}`, :math:`i,j=0,\ldots,Q_r-1`."""
     
-    _basis_thetas: AffineLinear[Mu, Vector] = None
+    _Ubasis_thetas: AffineLinear[Mu, Vector] = None
     
     @property
     def _Qf(self) -> int:
@@ -232,7 +232,7 @@ class AffineResidual(ResidualCalculator[Mu]):
         return len(self.fom.B)
     @property
     def _QU(self) -> int:
-        return len(self._basis_thetas)
+        return len(self._Ubasis_thetas)
     
 
     def theta(self, mu: Mu, u: Vector) -> np.ndarray:
@@ -252,11 +252,9 @@ class AffineResidual(ResidualCalculator[Mu]):
         
         # dirty hack to get the tetas of B @ basis
         B_tmp = self.fom.B.apply2data(lambda Bq: np.ones((0,0)))
-        Bu_tmp = B_tmp @ self._basis_thetas
-        theta_Bu = np.array([theta(mu) for theta in Bu_tmp.theta])
-        # theta_B = np.array([theta(mu) for theta in self.fom.B.theta])
+        theta_BU = np.array([theta(mu) for theta in B_tmp @ self._Ubasis_thetas])
         
-        return np.concatenate((theta_f.reshape(-1), np.outer(-u, theta_Bu).reshape(-1)))
+        return np.concatenate((theta_f.reshape(-1), np.outer(-u, theta_BU).reshape(-1)))
     
     
     def _set_fom(self, fom: FOM[Mu]):
@@ -286,8 +284,8 @@ class AffineResidual(ResidualCalculator[Mu]):
         
         Extends and precomputes the second part of the residual decomposition that depends on the system matrix and the reduced basis.
         """
-        if self._basis_thetas is None:
-            self._basis_thetas = basis.apply2data(lambda basisq: np.ones((0,0)))
+        if self._Ubasis_thetas is None:
+            self._Ubasis_thetas = basis.apply2data(lambda basisq: np.ones((0,0)))
         elif len(basis) != self._QU:
             raise ValueError("Can not add basis with different number of affine terms.")
         m = self.fom.dim[0]
