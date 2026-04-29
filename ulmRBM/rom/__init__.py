@@ -6,9 +6,10 @@ Reduced-Order Models
 .. autosummary::
     :toctree: generated/
     
-     ROM
-     Trial2TestROM
-     GalerkinROM
+    ROM
+    Trial2TestROM
+    Test2TrialROM
+    GalerkinROM
 
 Constant Estimators
 -------------------
@@ -18,8 +19,8 @@ Options
 .. autosummary::
     :toctree: generated/
      
-     StabilityOptions
-     ContinuityOptions
+    StabilityOptions
+    ContinuityOptions
      
 Abstract Base Classes
 ~~~~~~~~~~~~~~~~~~~~~

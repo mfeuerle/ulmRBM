@@ -76,7 +76,10 @@ class FOM(Generic[Mu]):
     _continuity_fun: Callable[[Mu, FOM[Mu]],float] | None = None
     """Optional explicit function to compute the continuity constant, bypassing the default eigenvalue-based computation."""
     
-    _supremizer_func: Callable[[Vector, FOM[Mu]], AffineLinear[Mu, Vector]] | None = None
+    _supremizer_func_V: Callable[[Vector, FOM[Mu]], AffineLinear[Mu, Vector]] | None = None
+    r"""Internal storage if a custom supremizer function is provided."""
+    
+    _supremizer_func_U: Callable[[Vector, FOM[Mu]], AffineLinear[Mu, Vector]] | None = None
     r"""Internal storage if a custom supremizer function is provided."""
     
     @property
@@ -101,7 +104,8 @@ class FOM(Generic[Mu]):
                  stability: Callable[[Mu, FOM[Mu]], float] | float | None = None,
                  continuity: Callable[[Mu, FOM[Mu]], float] | float | None = None,
                  solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = IterativeSolver(),
-                 supremizer: Callable[[Vector, FOM[Mu]], ParametricLinear[Mu, Vector]] = None):
+                 supremizer_V: Callable[[Vector, FOM[Mu]], ParametricLinear[Mu, Vector]] = None,
+                 supremizer_U: Callable[[Vector, FOM[Mu]], ParametricLinear[Mu, Vector]] = None):
         """
         Args:
             B:
@@ -120,8 +124,10 @@ class FOM(Generic[Mu]):
                 Optional function (with signature ``(mu,fom)``) or constant to compute the continuity constant at a given parameter value. If ``None``, the constant is computed via an eigenvalue problems.
             solver:
                 Solver for the linear system. Defaults to a iterative solver.
-            supremizer:
-                Custom function for the supremizing operator, if ``None``, a default implementation is used. See :meth:`supremizer`.
+            supremizer_V:
+                Custom function for the supremizing operator in :math:`V`, if ``None``, a default implementation is used. See :meth:`supremizer_V`.
+            supremizer_U:
+                Custom function for the supremizing operator in :math:`U`, if ``None``, a default implementation is used. See :meth:`supremizer_U`.
         """
         
         if B.shape[0] != f.shape[0]:
@@ -141,7 +147,8 @@ class FOM(Generic[Mu]):
         self.solver = solver
         self._stability_fun = wrap_scalar(stability)
         self._continuity_fun = wrap_scalar(continuity)
-        self._supremizer_func = supremizer
+        self._supremizer_func_V = supremizer_V
+        self._supremizer_func_U = supremizer_U
     
     def stability(self, mu: Mu) -> float:
         r"""
@@ -256,33 +263,68 @@ class FOM(Generic[Mu]):
         return self.l(mu) @ u
     
     
-    def supremizer(self, u: Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
+    def supremizer_V(self, u: Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
         r"""
-        Computes the supremizer operator applied to the given trial vector(s).
+        Computes the supremizing operator in the test space applied to the given trial vector(s).
         
-        The supremizing operator :math:`S(\mu): U \to V` is the unique isomorphic operator given by
-        :math:`S(\mu) := R_V^{-1} B(\mu)` where :math:`R_V : V \to V'` is the Riesz map of the test space.
-        This function returns :math:`S(\mu) u` as a function of :math:`\mu`.
+        The supremizing operator :math:`S_V(\mu): U \to V` is the unique isomorphic operator given by
+        :math:`S_V(\mu) := R_V^{-1} B(\mu)` where :math:`R_V : V \to V'` is the Riesz map of the test space.
+        This function returns :math:`S_V(\mu) u` as a function of :math:`\mu`.
         
-        If a custom supremizer function was provided during initialization, it is used. Otherwise, the supremizer is constructed from the system matrix and test space inner product. Thereby, if the test space inner product is parameter-independent, the supremizer :math:`S(\mu)` is affine with respect to :math:`\mu` and the result is an :class:`AffineLinear`. Otherweise, a parameter-dependend function with no additional structure is resturned.
+        If a custom supremizer function was provided during initialization, it is used. Otherwise, the supremizer is constructed from the system matrix and test space inner product. Thereby, if the test space inner product is parameter-independent, the supremizer :math:`S_V(\mu)` is affine with respect to :math:`\mu` and the result is an :class:`AffineLinear`. Otherweise, a parameter-dependend function with no additional structure is resturned.
+        
+        This supremizer is used for `Trial2TestROM`.
         
         Args:
             u:
                 Trial vector(s) :math:`(N,)` or :math:`(N, k)` to which the supremizer is applied.
         Returns:
-            Supremizer applied to :math:`u`, i.e. :math:`S(\mu) u` as a function of :math:`\mu`.
+            Supremizer applied to :math:`u`, i.e. :math:`S_V(\mu) u` as a function of :math:`\mu`.
         """
-        if self._supremizer_func is not None:
-            return self._supremizer_func(u, self)
+        if self._supremizer_func_V is not None:
+            return self._supremizer_func_V(u, self)
         else:
-            return self._supremizer(u)
+            return self._supremizer_V(u)
+        
+    def supremizer_U(self, v: Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
+        r"""
+        Computes the supremizing operator in the trial space applied to the given test vector(s).
+        
+        The supremizing operator :math:`S_U(\mu): V \to U` is the unique isomorphic operator given by
+        :math:`S_U(\mu) := R_U^{-1} B(\mu)^*` where :math:`R_U : U \to U'` is the Riesz map of the trial space and :math:`B(\mu)^*: V \to U'` is the adjoint operator of :math:`B(\mu)`.
+        This function returns :math:`S_U(\mu) v` as a function of :math:`\mu`.
+        
+        If a custom supremizer function was provided during initialization, it is used. Otherwise, the supremizer is constructed from the system matrix and test space inner product. Thereby, if the test space inner product is parameter-independent, the supremizer :math:`S_U(\mu)` is affine with respect to :math:`\mu` and the result is an :class:`AffineLinear`. Otherweise, a parameter-dependend function with no additional structure is resturned.
+        
+        This supremizer is used for `Test2TrialROM`.
+        
+        
+        Args:
+            v:
+                Test vector(s) :math:`(N,)` or :math:`(N, k)` to which the supremizer is applied.
+        Returns:
+            Supremizer applied to :math:`v`, i.e. :math:`S_U(\mu) v` as a function of :math:`\mu`.
+        """
+        if self._supremizer_func_U is not None:
+            return self._supremizer_func_U(u, self)
+        else:
+            return self._supremizer_U(u)
+        
     
-    def _supremizer(self, u: Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
+    def _supremizer_V(self, u: AffineLinear[Mu, Vector] | Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
         if self.V.is_parametric:
-            return lambda mu: self.V.dual.riesz(mu, self.B(mu) @ u)
+            return lambda mu: self.V.dual.riesz(mu, self.B(mu) @ (wrap_affinelinear(u)(mu)) )
         else:
             Bu = self.B @ u
             return Bu.apply2data(lambda Bu_q: self.V.dual.riesz(NO_MU, Bu_q))
+        
+    def _supremizer_U(self, v: AffineLinear[Mu, Vector] | Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
+        if self.U.is_parametric:
+            return lambda mu: self.U.dual.riesz(mu, self.B(mu).T @ (wrap_affinelinear(v)(mu)) )
+        else:
+            Bv = self.B.T @ v
+            return Bv.apply2data(lambda Bv_q: self.U.dual.riesz(NO_MU, Bv_q))
+        
 
 class GalerkinFOM(FOM[Mu]):
     r"""
