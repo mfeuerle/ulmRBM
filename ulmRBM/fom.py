@@ -306,9 +306,9 @@ class FOM(Generic[Mu]):
             Supremizer applied to :math:`v`, i.e. :math:`S_U(\mu) v` as a function of :math:`\mu`.
         """
         if self._supremizer_func_U is not None:
-            return self._supremizer_func_U(u, self)
+            return self._supremizer_func_U(v, self)
         else:
-            return self._supremizer_U(u)
+            return self._supremizer_U(v)
         
     
     def _supremizer_V(self, u: AffineLinear[Mu, Vector] | Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
