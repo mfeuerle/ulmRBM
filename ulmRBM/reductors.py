@@ -115,6 +115,7 @@ def greedy_algorithm(
         
         mu = mu_train.pop(0)
         u_mu = u_fom.pop(0) if strong else fom.solve(mu)
+        print(f"{time.time() - start_time:6.1f}s:\t adding basis to rom...")
         rom.add_basis(u_mu)
         
         if update_stability:
@@ -164,6 +165,7 @@ def greedy_algorithm(
         print(f"{time.time() - start_time:6.1f}s:\t computing new basis (idx={mu_idx}, N={rom.dim[1]}) ...")
         mu = mu_train.pop(idx)
         u_mu = u_fom.pop(idx) if strong else fom.solve(mu)
+        print(f"{time.time() - start_time:6.1f}s:\t adding basis to rom...")
         rom.add_basis(u_mu)
         
         if update_stability:
@@ -192,6 +194,6 @@ def greedy_algorithm(
     print(f"{time.time() - start_time:6.1f}s: Greedy algorithm completed: {codes[flag]} (final_error={err:.2e}, final_N={rom.dim[1]})")
     
     if flag:
-        warn(f"Greedy algorithm stopped without reaching tolerance ({codes[flag]}). Current tolerance: {err}, target tolerance: {tol}.", UserWarning)
+        warn(f"Greedy algorithm stopped without reaching tolerance ({codes[flag]}). Current tolerance: {err:.2e}, target tolerance: {tol:.2e}.", UserWarning)
         
     return flag, np.array(err_decay), np.array(selected_mu_idx, dtype=int)
