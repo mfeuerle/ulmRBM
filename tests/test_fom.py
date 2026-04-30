@@ -368,10 +368,10 @@ class TestSupremizer:
             return lambda mu: 2 * u  # Simple custom implementation
             
         fom = FOM(affine_matrix, affine_vector, param_product_U, param_product_U,
-                 supremizer_V=custom_supremizer)
+                 supremizer=custom_supremizer)
         
         u = np.array([1.0, 2.0])
-        result = fom.supremizer_V(u)
+        result = fom.supremizer(u)
         
         # Should use custom function
         assert np.allclose(result(0.5), 2 * u)
@@ -381,7 +381,7 @@ class TestSupremizer:
         fom = FOM(affine_matrix, affine_vector, noparam_product_U, noparam_product_U)
         
         for u in [np.array([1.0, 0.0]), np.array([[1.0, 0.0], [2.0, 1.0]])]:
-            supremizer = fom.supremizer_V(u)
+            supremizer = fom.supremizer(u)
             assert isinstance(supremizer, AffineLinear) # Should return AffineLinear for parameter-independent case
             for mu in test_parameters:
                 expected = noparam_product_U.dual(mu) @ (affine_matrix(mu) @ u)
@@ -392,7 +392,7 @@ class TestSupremizer:
         fom = FOM(affine_matrix, affine_vector, param_product_U, inner_product_V)
         
         for u in [np.array([1.0, 0.0]), np.array([[1.0, 0.0], [2.0, 1.0]])]:
-            supremizer = fom.supremizer_V(u)
+            supremizer = fom.supremizer(u)
             for mu in test_parameters:
                 expected = inner_product_V.dual(mu) @ (affine_matrix(mu) @ u)
                 assert np.allclose(supremizer(mu), expected)

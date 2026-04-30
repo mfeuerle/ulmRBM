@@ -18,14 +18,14 @@ import time
 
 from ulmRBM.core import Mu, Vector
 from ulmRBM.products import InnerProduct
-from ulmRBM.rom import ROM
+from ulmRBM.rom import ROM, Trial2TestROM
 
 __all__= [
     'greedy_algorithm',
 ]
 
 def greedy_algorithm(
-    rom: ROM[Mu],
+    rom: Trial2TestROM[Mu],
     mu_train: list[Mu],
     Nmax: int,
     tol: float = 1e-5,

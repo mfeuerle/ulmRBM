@@ -101,6 +101,11 @@ class AffineList(Generic[Mu], MutableSequence):
     __kron_priority__ = 100.0
     """Priority over the https://github.com/mfeuerle/kron module to defer to our ``__r*__`` methods."""
     
+    @property
+    def is_parametric(self) -> bool:
+        """Whether the affine list contains any parameter-dependent terms."""
+        return any(not isinstance(theta, TrivialParametric) for theta in self.theta)
+    
     def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineList[Mu] | Iterable[tuple[ParametricObject[Mu, float], any]] = [], data: list = []):
         r"""
         Args:
@@ -128,7 +133,7 @@ class AffineList(Generic[Mu], MutableSequence):
         """List of parameter-independent data terms."""
         
     def __repr__(self):
-        return f"<{self.__class__.__name__} with {len(self)} terms>"
+        return f"<{self.__class__.__name__} of length {len(self)}>"
         
     def _construct_new(self, theta, data, type: _ConstructNew = _ConstructNew.SAME) -> AffineList[Mu]:
         """Fine controll construction of new AffineList objects for operations."""
@@ -507,7 +512,8 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
             self.shape = None
             
     def __repr__(self):
-        return f"<{self.__class__.__name__} of shape {self.shape} with {len(self)} terms>"
+        shape = "".join([f"{s}x" for s in self.shape])[:-1] if self.shape is not None else "unknown shape"
+        return f"<{shape} {self.__class__.__name__} of length {len(self)}>"
             
     def insert(self, index: int, value: tuple[ParametricObject[Mu, float], Data]):
         super().insert(index, value)

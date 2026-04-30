@@ -7,8 +7,8 @@ Reduced-Order Models
     :toctree: generated/
     
     ROM
+    GeneralROM
     Trial2TestROM
-    Test2TrialROM
     GalerkinROM
 
 Constant Estimators
