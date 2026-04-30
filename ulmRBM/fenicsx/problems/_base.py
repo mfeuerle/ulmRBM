@@ -244,8 +244,8 @@ def weak_problem(msh: mesh.Mesh,
         g = [AffineObject([1.0], [u_exact])] * len(dbdry_U)
     
         _u = [utils.interpolate_function(utils.change_element(H_space, add_degree=1), u_exact) for H_space in H_spaces]
-        _A = utils.interpolate_function(utils.change_element(F_space, shape=(gdim, gdim)), A(mu_exact))
-        h  = [AffineObject([1.0], [ufl.inner(_A * ufl.grad(_u), ufl.FacetNormal(msh))]) for _u in _u]
+        _A = [utils.interpolate_function(utils.change_element(H_space, shape=(gdim, gdim)), A(mu_exact)) for H_space in H_spaces]
+        h  = [AffineObject([1.0], [ufl.inner(__A * ufl.grad(__u), ufl.FacetNormal(msh))]) for __u, __A in zip(_u, _A)]
         
         _u = utils.interpolate_function(utils.change_element(F_space, add_degree=2), u_exact)
         _A = utils.interpolate_function(utils.change_element(F_space, add_degree=1, shape=(gdim, gdim)), A(mu_exact))
