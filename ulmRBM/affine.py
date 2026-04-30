@@ -133,7 +133,7 @@ class AffineList(Generic[Mu], MutableSequence):
         """List of parameter-independent data terms."""
         
     def __repr__(self):
-        return f"<{self.__class__.__name__} of length {len(self)}>"
+        return f"<{self.__class__.__name__} with {len(self)} affine terms>"
         
     def _construct_new(self, theta, data, type: _ConstructNew = _ConstructNew.SAME) -> AffineList[Mu]:
         """Fine controll construction of new AffineList objects for operations."""
@@ -512,8 +512,12 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
             self.shape = None
             
     def __repr__(self):
-        shape = "".join([f"{s}x" for s in self.shape])[:-1] if self.shape is not None else "unknown shape"
-        return f"<{shape} {self.__class__.__name__} of length {len(self)}>"
+        if self.shape is not None:        
+            shape = f"({self.shape[0]},"
+            shape += "".join([f" {s}," for s in self.shape[1:]])[:-1] + ")"
+        else:
+            shape = "(unknown shape)"            
+        return f"<{self.__class__.__name__} with {len(self)} affine terms and shape {shape}>"
             
     def insert(self, index: int, value: tuple[ParametricObject[Mu, float], Data]):
         super().insert(index, value)

@@ -67,6 +67,9 @@ class ResidualCalculator(Generic[Mu]):
     fom: FOM[Mu]
     """Full-order model for which the dual norm of the residual is computed."""
     _fom: FOM[Mu] | None = None
+    
+    def __repr__(self):
+        return f"<{self.__class__.__name__} for {repr(self.fom)}>"
 
         
     def set(self, fom: FOM[Mu] | ROM[Mu], basis: AffineLinear[Mu, Vector] = None):

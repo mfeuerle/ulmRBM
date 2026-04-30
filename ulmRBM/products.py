@@ -127,6 +127,12 @@ class InnerProduct(ParametricLinear[Mu, Matrix]):
         
         self.is_parametric: bool = is_parametric
         """Wheter the inner product depends on the parameter (``True``) or is constant w.r.t. the parameter (``False``)."""
+        
+    def __repr__(self):
+        parametric = "Parametric" if self.is_parametric else "Constant"
+        shape = f"({self.shape[0]}, {self.shape[1]})"
+        return f"<{parametric} {self.__class__.__name__} of shape {shape}>"
+        
     
     
     def __call__(self, mu: Mu) -> LinearOperator:

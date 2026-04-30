@@ -95,6 +95,9 @@ class ConstantsEstimator(Generic[Mu]):
         
         self.fom: FOM[Mu] = fom
         """Full-order model for which constants are estimated."""
+        
+    def __repr__(self):
+        return f"<{self.__class__.__name__} for {repr(self.fom)}>"
     
     @abstractmethod
     def __call__(self, mu: Mu) -> float:

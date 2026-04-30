@@ -142,6 +142,12 @@ class FOM(Generic[Mu]):
         self._stability_fun = wrap_scalar(stability)
         self._continuity_fun = wrap_scalar(continuity)
         self._supremizer_func = supremizer
+        
+    def __repr__(self):
+        shape = f"({self.dim[0]}, {self.dim[1]}"
+        if self.dim[2] is not None: shape += f", {self.dim[2]}"
+        shape += ")"
+        return f"<{self.__class__.__name__} of dimension {shape}>"
     
     def stability(self, mu: Mu) -> float:
         r"""
