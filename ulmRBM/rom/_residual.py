@@ -252,7 +252,7 @@ class AffineResidual(ResidualCalculator[Mu]):
         
         # dirty hack to get the tetas of B @ basis
         B_tmp = self.fom.B.apply2data(lambda Bq: np.ones((0,0)))
-        theta_BU = np.array([theta(mu) for theta in B_tmp @ self._Ubasis_thetas])
+        theta_BU = np.array([theta(mu) for theta in (B_tmp @ self._Ubasis_thetas).theta])
         
         return np.concatenate((theta_f.reshape(-1), np.outer(-u, theta_BU).reshape(-1)))
     
