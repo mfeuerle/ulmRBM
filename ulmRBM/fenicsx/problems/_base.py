@@ -257,8 +257,8 @@ def weak_problem(msh: mesh.Mesh,
         f, g, h = data
         
         f = f.apply2data(lambda fq: utils.interpolate_function(F_space, fq))
-        g = [g.apply2data(lambda gq: utils.interpolate_function(U, gq)) for g in g]
-        h = [h.apply2data(lambda hq: utils.interpolate_function(H_space, hq)) for h, H_space in zip(h, H_spaces)]
+        g = [g_.apply2data(lambda gq: utils.interpolate_function(U, gq)) for g_ in g]
+        h = [h_.apply2data(lambda hq: utils.interpolate_function(H_space, hq)) for h_, H_space in zip(h, H_spaces)]
         
     else:
         raise ValueError("data has to be either (u_exact, mu_exact) or (f, g, h)")
@@ -280,7 +280,7 @@ def weak_problem(msh: mesh.Mesh,
         dbdry_V = [mesh.locate_entities_boundary(msh, tdim-1, bdry) for bdry in  dbdry_V]
 
     # create dirichlet boundary conditions
-    dbcs_U = [AffineDirichletBC(U, g, bdry) for g, bdry in zip(g, dbdry_U)]
+    dbcs_U = [AffineDirichletBC(U, g_, bdry) for g_, bdry in zip(g, dbdry_U)]
     dbcs_V = [AffineDirichletBC(V, 0.0, bdry) for bdry in dbdry_V]
     
     U = FEniCSxSpaceWithDirichletBCs(U, dbcs_U)
@@ -301,7 +301,7 @@ def weak_problem(msh: mesh.Mesh,
             + c.apply2data(lambda cq: cq * u * v * ufl.dx)
         
     f_ufl = f.apply2data(lambda fq: fq * v * ufl.dx) \
-            - sum(h.apply2data(lambda hq: hq * v * ds(i)) for i,h in enumerate(h))
+            - sum(h_.apply2data(lambda hq: hq * v * ds(i)) for i,h_ in enumerate(h))
 
     return B_ufl, f_ufl, U, V
 
