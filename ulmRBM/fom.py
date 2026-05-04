@@ -230,18 +230,20 @@ class FOM(Generic[Mu]):
         val = eigsh(**eigsh_opts)[0]
         return np.sqrt(val)
         
-    def solve(self, mu: Mu) -> Vector:
+    def solve(self, mu: Mu, u0=None) -> Vector:
         r"""
         Solve the parametric system :math:`B(\mu) u = f(\mu)` for the given parameter value.
         
         Args:
             mu:
                 Parameter value at which to solve the system.
+            u0:
+                Optional initial guess for iterative solvers.
         
         Returns:
             State vector :math:`u(\mu) \in \mathbb{R}^n`.
         """
-        return self.solver(self.B(mu), self.f(mu))
+        return self.solver(self.B(mu), self.f(mu), u0)
     
     def output(self, mu: Mu, u: Vector | None = None) -> Vector:
         r"""
@@ -288,10 +290,9 @@ class FOM(Generic[Mu]):
     
     def _supremizer(self, u: AffineLinear[Mu, Vector] | Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
         if self.V.is_parametric:
-            return lambda mu: self.V.dual.riesz(mu, self.B(mu) @ (wrap_affinelinear(u)(mu)) )
+            return lambda mu: self.V.dual(mu) @ (self.B(mu) @ wrap_affinelinear(u)(mu))
         else:
-            Bu = self.B @ u
-            return Bu.apply2data(lambda Bu_q: self.V.dual.riesz(NO_MU, Bu_q))
+            return self.V.dual(NO_MU) @ (self.B @ u)
         
 
 class GalerkinFOM(FOM[Mu]):

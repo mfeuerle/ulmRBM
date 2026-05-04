@@ -166,7 +166,7 @@ def weak_problem(msh: mesh.Mesh,
     and
     
     .. math::
-        f(v) = \left(f, v\right)_{L^2(\Omega)} - \left(h, v\right)_{L^2(\partial\Omega)},
+        f(v) = \left(f, v\right)_{L^2(\Omega)} - \sum_{i=1}^{N_N} \left(h_i, v\right)_{L^2(\Gamma_N^i)}.,
         
     where :math:`u` is restricted to the dirichlet boundary conditions :math:`g_i` on :math:`\Gamma_D^i` and the test functions :math:`v` are restricted to be zero on the dirichlet boundaries of the test space as given in ``dbdry_V``.
     

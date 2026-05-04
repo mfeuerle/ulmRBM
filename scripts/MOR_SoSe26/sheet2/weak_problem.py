@@ -28,8 +28,8 @@ if use_exact:
             1.0)                                # given parameter value
 else:
     data = ( AffineObject([1.0], [1.0]),   # f: right-hand side
-            [AffineObject([1.0], [1.0])],  # g: list of dirichlet boundary conditions
-            [AffineObject([1.0], [1.0])])  # h: list of neumann boundary conditions
+            [AffineObject([1.0], [0.0])],  # g: list of dirichlet boundary conditions
+            [AffineObject([1.0], [0.0])])  # h: list of neumann boundary conditions
     
 B, f, U, V = weak_problem(msh, (A,b,c), data, dbdry, nbdry)
 B, f = assemble_system(B, f, U, V)

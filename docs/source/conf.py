@@ -18,8 +18,8 @@ sys.path.insert(0, pathlib.Path(__file__).parents[2].resolve().as_posix())
 
 # -- Project information -----------------------------------------------------
 
-project = 'ulmRBM - Reduced Basis Method implementation'
-copyright = '2026, Moritz Feuerle'
+project = 'ulmRBM'
+copyright = '2026, Moritz Feuerle (Ulm University)'
 author = 'Moritz Feuerle'
 
 # The full version, including alpha/beta/rc tags

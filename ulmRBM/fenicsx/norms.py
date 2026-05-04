@@ -93,4 +93,11 @@ def h1(U: FEniCSxSpaceWithDirichletBCs,
             If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
     """
     
-    return MatrixInnerProduct(l2(U,bcs=bcs)(NO_MU) + h10(U,bcs=bcs)(NO_MU), solver)
+    if U.space.ufl_element().basix_element.degree < 1:
+        raise ValueError("H1 norm is not defined for elements of degree < 1.")
+    
+    u = ufl.TrialFunction(U.space)
+    v = ufl.TestFunction(U.space)
+    product = assemble_matrix(u*v*ufl.dx + ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx)
+    if bcs: product = product[U.dofs,:][:,U.dofs]
+    return MatrixInnerProduct(product, solver)
