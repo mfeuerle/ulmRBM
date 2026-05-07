@@ -9,7 +9,9 @@ import ufl
 from ulmRBM.fenicsx import utils
 
 from ulmRBM.core import Mu
-from ulmRBM.affine import AffineList, AffineObject, AffineLinear, _ConstructNew
+from ulmRBM.affine import AffineObject, AffineLinear
+
+from ulmRBM.affine._affine import _ConstructNew
 
 __all__ = [
     'utils',
@@ -19,7 +21,7 @@ __all__ = [
 ]
 
 class AffineDirichletBC(AffineLinear[Mu, np.ndarray]):
-    def __init__(self, space: fem.FunctionSpace, g: AffineList[Mu] | any, entities = None, dofs = None):
+    def __init__(self, space: fem.FunctionSpace, g: AffineObject[Mu, np.ndarray] | any, entities = None, dofs = None):
         """ Affine Dirichlet boundary condition on a FEniCSx function space.
         
         Args:
@@ -27,8 +29,8 @@ class AffineDirichletBC(AffineLinear[Mu, np.ndarray]):
                 FEniCSx function space on which the boundary condition is defined.
             g:
                 AffineObject representing the boundary values of the Dirichlet boundary condition.
-                If g is not an AffineList, it is converted to an AffineList using AffineList([1.0], [g]).
-                Then, if g is (convertible to) an AffineLinear, i.e. a (affine) vector, it has to be of length equal to the number of dofs in the function space or equal to the number of dofs restricted by the boundary condition.
+                If g is not an `AffineObject`, it is converted to one using AffineObject([1.0], [g]).
+                Then, if g is (convertible to) an `AffineLinear`, i.e. a (affine) vector, it has to be of length equal to the number of dofs in the function space or equal to the number of dofs restricted by the boundary condition.
                 If it is not (convertible to) an AffineLinear, it is assumed to be a  fenicsx object representing a boundary condition (e.g. a Function a Constant, or a ufl Expression), which has to be supported by :func:`utils.dirichletbc`.
             entities:
                 Mesh entities (e.g. facets) on which the boundary condition is applied. If entities are given, do not provide dofs. The dofs are determined from the entities using the function space's dofmap.
@@ -44,8 +46,8 @@ class AffineDirichletBC(AffineLinear[Mu, np.ndarray]):
             dofs = fem.locate_dofs_topological(space, space.mesh.topology.dim-1, entities)
         
         
-        if not isinstance(g, AffineList):
-            g = AffineList([1.0], [g])
+        if not isinstance(g, AffineObject):
+            g = AffineObject([1.0], [g])
             try:
                 g = AffineLinear(g)
             except: pass

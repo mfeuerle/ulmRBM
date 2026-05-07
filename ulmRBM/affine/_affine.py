@@ -1,22 +1,5 @@
 """
 Affine decomposition classes for parametric problems.
-
-Affine Classes
---------------
-.. autosummary::
-   :toctree: generated/
-   
-    AffineList
-    AffineObject
-    AffineLinear
-    AffineNonlinear
-    
-Wrapper Utilities
------------------
-.. autosummary::
-    :toctree: generated/
-    
-    wrap_affinelinear
 """
 
 
@@ -24,10 +7,8 @@ from __future__ import annotations
 
 
 __all__ = [
-    'AffineList',
     'AffineObject',
     'AffineLinear',
-    'AffineNonlinear',
     'wrap_affinelinear'
 ]
 
@@ -36,7 +17,7 @@ from typing import Generic
 from collections.abc import Iterable, MutableSequence, Callable
 from enum import IntEnum
 
-from .core import Mu, Data, ParametricObject, ParametricLinear, TrivialParametric, wrap_scalar, unwrap
+from ulmRBM.core import Mu, Data, ParametricObject, ParametricLinear, TrivialParametric, wrap_scalar, unwrap
 
 
 class _ScaledScalar(ParametricObject[Mu, float]):
@@ -79,14 +60,23 @@ class _ConstructNew(IntEnum):
     MUL = 2
     APPLY2DATA = 3
 
-class AffineList(Generic[Mu], MutableSequence):
+
+class AffineObject(ParametricObject[Mu, Data], MutableSequence):
+    r"""
+    An affine decomposition of a parametric object.
+
+    An affine object, consists of a list of parameter dependent scalar functions :math:`\theta_1(\mu),\dots,\theta_Q(\mu)` and parameter independent data terms :math:`\text{data}_1,\dots,\text{data}_Q` and is given
+    by an affine decomposition of the form
+    
+    .. math::
+        \text{data}(\mu) = \sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q,
+        
+    where :math:`\mu` is a parameter of type ``Mu``, and :math:`\text{data}(\mu)` is an object of type ``Data``.
+    """
     r"""
     List of parameter dependent scalar functions and parameter independent data terms.
     
     An affine object, consisting of a list of parameter dependent scalar functions :math:`\theta_1(\mu),\dots,\theta_Q(\mu)` and parameter independent data terms :math:`\text{data}_1,\dots,\text{data}_Q`.
-    
-    This class behaves like a list of ``(theta, data)`` tuples and implements the 
-    ``MutableSequence`` protocol, supporting indexing, slicing, iteration, insertion, and deletion.
     """
     
     __array_priority__ = 100.0
@@ -106,18 +96,18 @@ class AffineList(Generic[Mu], MutableSequence):
         """Whether the affine list contains any parameter-dependent terms."""
         return any(not isinstance(theta, TrivialParametric) for theta in self.theta)
     
-    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineList[Mu] | Iterable[tuple[ParametricObject[Mu, float], any]] = [], data: list = []):
+    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineObject[Mu, Data] | Iterable[tuple[ParametricObject[Mu, float], any]] = [], data: list = []):
         r"""
         Args:
             theta :
                 List of parameter-dependent coefficient functions. Each function should accept a 
-                parameter value and return a scalar coefficient. Alternatively, an :class:`AffineList` can be provided, in which case its ``theta`` and ``data`` attributes are used, or a iterable of ``(theta, data)`` tuples.
+                parameter value and return a scalar coefficient. Alternatively, an `AffineObject` can be provided, in which case its ``theta`` and ``data`` attributes are used, or a iterable of ``(theta, data)`` tuples, e.g. ``[(theta1,data1), (theta2,data2)]``.
             data :
-                List of parameter-independent data terms, or empty if ``theta`` is an :class:`AffineList` or iterable.
+                List of parameter-independent data terms, or empty if ``theta`` is an `AffineObject` or iterable.
         """
         
         if not data:
-            if isinstance(theta, AffineList):
+            if isinstance(theta, AffineObject):
                 data  = theta.data
                 theta = theta.theta
             else:
@@ -134,13 +124,36 @@ class AffineList(Generic[Mu], MutableSequence):
         
     def __repr__(self):
         return f"<{self.__class__.__name__} with {len(self)} affine terms>"
+    
+    def __call__(self, mu: Mu) -> Data:
+        r"""
+        Evaluate the affine decomposition at a parameter value.
         
-    def _construct_new(self, theta, data, type: _ConstructNew = _ConstructNew.SAME) -> AffineList[Mu]:
-        """Fine controll construction of new AffineList objects for operations."""
+        Computes :math:`\sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q`.
+        
+        Args:
+            mu :
+                Single parameter value at which to evaluate the coefficient functions.
+            
+        Examples
+        --------
+        >>> theta = [lambda mu: mu, lambda mu: mu**2]
+        >>> data = [1.0, 2.0]
+        >>> ad = AffineObject(theta, data)
+        >>> ad(3.0)  # 3*1 + 9*2 = 21
+        21.0
+        """
+        val = self.theta[0](mu) * self.data[0]
+        for theta_q, data_q in zip(self.theta[1:], self.data[1:]):
+            val += theta_q(mu) * data_q
+        return val
+        
+    def _construct_new(self, theta, data, type: _ConstructNew = _ConstructNew.SAME) -> AffineObject[Mu,Data]:
+        """Fine controll construction of new AffineObject objects for operations."""
         return self.__class__(theta, data)
         
         
-    def __getitem__(self, key: int | slice) -> tuple[ParametricObject[Mu, float], any] | AffineList[Mu]:
+    def __getitem__(self, key: int | slice) -> tuple[ParametricObject[Mu, float], any] | AffineObject[Mu, Data]:
         r"""
         Get item(s) by index or slice.
         
@@ -150,15 +163,15 @@ class AffineList(Generic[Mu], MutableSequence):
             
         Returns:
             If ``key`` is an integer, returns a tuple ``(theta[key], data[key])``.
-            If ``key`` is a slice, returns a new ``AffineList`` with the sliced terms.
+            If ``key`` is a slice, returns a new ``AffineObject`` with the sliced terms.
             
         Examples
         --------
         >>> theta = [lambda mu: mu, lambda mu: mu**2, lambda mu: 1.0]
         >>> data = [1.0, 2.0, 3.0]
-        >>> ad = AffineList(theta, data)
+        >>> ad = AffineObject(theta, data)
         >>> theta_0, data_0 = ad[0]  # Get first term
-        >>> sliced = ad[1:]  # Slice returns new AffineList
+        >>> sliced = ad[1:]  # Slice returns new AffineObject
         >>> len(sliced)
         2
         """
@@ -167,7 +180,7 @@ class AffineList(Generic[Mu], MutableSequence):
         return self._construct_new(self.theta[key], self.data[key])
     
     
-    def __setitem__(self, key: int | slice, value: AffineList[Mu] | tuple[ParametricObject[Mu, float], any] | Iterable[tuple[ParametricObject[Mu, float], any]]):
+    def __setitem__(self, key: int | slice, value: AffineObject[Mu, Data] | tuple[ParametricObject[Mu, float], Data] | Iterable[tuple[ParametricObject[Mu, float], Data]]):
         r"""
         Set item(s) by index or slice.
         
@@ -175,19 +188,19 @@ class AffineList(Generic[Mu], MutableSequence):
             key :
                 Index or slice to set.
             value :
-                For integer index: a tuple ``(theta, data)``, a list ``[(theta, data)]`` or an ``AffineList``of length 1. 
-                For slice: an ``AffineList`` or a list of ``(theta, data)`` tuples.
+                For integer index: a tuple ``(theta, data)``, a list ``[(theta, data)]`` or an ``AffineObject``of length 1. 
+                For slice: an ``AffineObject`` or a list of ``(theta, data)`` tuples.
             
         Examples
         --------
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
         >>> data = [1.0, 2.0]
-        >>> ad = AffineList(theta, data)
+        >>> ad = AffineObject(theta, data)
         >>> ad[0] = (lambda mu: 2*mu, 5.0)  # Set single term
         >>> ad[0:2] = [(lambda mu: mu**3, 10.0), (lambda mu: 1.0, 20.0)]  # Set slice with list of tuples
         """
         
-        if isinstance(value, AffineList):
+        if isinstance(value, AffineObject):
             theta = value.theta
             data = value.data
         else:
@@ -200,7 +213,7 @@ class AffineList(Generic[Mu], MutableSequence):
                 
         if isinstance(key, int):
             if len(theta) != 1:
-                raise ValueError("When setting a single element, value must be a single (theta, data) tuple or AffineList of length 1.")
+                raise ValueError("When setting a single element, value must be a single (theta, data) tuple or AffineObject of length 1.")
             self.theta[key] = theta[0]
             self.data[key] = data[0]
         else:                
@@ -219,7 +232,7 @@ class AffineList(Generic[Mu], MutableSequence):
         --------
         >>> theta = [lambda mu: mu, lambda mu: mu**2, lambda mu: 1.0]
         >>> data = [1.0, 2.0, 3.0]
-        >>> ad = AffineList(theta, data)
+        >>> ad = AffineObject(theta, data)
         >>> del ad[1]  # Delete second term
         >>> len(ad)
         2
@@ -238,7 +251,7 @@ class AffineList(Generic[Mu], MutableSequence):
         --------
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
         >>> data = [1.0, 2.0]
-        >>> ad = AffineList(theta, data)
+        >>> ad = AffineObject(theta, data)
         >>> len(ad)
         2
         """
@@ -256,7 +269,7 @@ class AffineList(Generic[Mu], MutableSequence):
         --------
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
         >>> data = [1.0, 2.0]
-        >>> ad = AffineList(theta, data)
+        >>> ad = AffineObject(theta, data)
         >>> for theta_q, data_q in ad:
         ...     print(theta_q(2.0), data_q)
         2.0 1.0
@@ -278,7 +291,7 @@ class AffineList(Generic[Mu], MutableSequence):
         --------
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
         >>> data = [1.0, 2.0]
-        >>> ad = AffineList(theta, data)
+        >>> ad = AffineObject(theta, data)
         >>> ad.insert(1, (lambda mu: 2*mu, 5.0))
         >>> len(ad)
         3
@@ -288,7 +301,7 @@ class AffineList(Generic[Mu], MutableSequence):
         self.theta.insert(index, wrap_scalar(value[0]))
         self.data.insert(index, value[1])
     
-    def __add__(self, other: AffineList[Mu] | Iterable[tuple[ParametricObject[Mu, float], any]]) -> AffineList[Mu]:
+    def __add__(self, other: AffineObject[Mu, Data] | Iterable[tuple[ParametricObject[Mu, float], Data]]) -> AffineObject[Mu, Data]:
         r"""
         Add object to this affine decomposition.
         
@@ -301,23 +314,23 @@ class AffineList(Generic[Mu], MutableSequence):
         
         Args:
             other :
-                Either another :class:`AffineList` or a iterable of ``(theta,data)`` tuples.
+                Either another `AffineObject` or a iterable of ``(theta,data)`` tuples.
         
         Returns:
-            A new :class:`AffineList` with the combined terms.
+            A new `AffineObject` with the combined terms.
             
         Examples
         --------
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
         >>> data = [1.0, 2.0]
-        >>> ad = AffineList(theta, data)
+        >>> ad = AffineObject(theta, data)
         >>> ad2 = ad + 5.0
         >>> len(ad2)
         3
         >>> ad2(1.0)  # 1*1 + 1*2 + 5 = 8
         8.0
         """
-        if isinstance(other, AffineList):
+        if isinstance(other, AffineObject):
             theta = other.theta
             data  = other.data
         elif other == 0:
@@ -334,7 +347,7 @@ class AffineList(Generic[Mu], MutableSequence):
     add = __add__
     add.__doc__ = __add__.__doc__
     
-    def __neg__(self) -> AffineList[Mu]:
+    def __neg__(self) -> AffineObject[Mu, Data]:
         r"""
         Negation of the affine decomposition.
             
@@ -342,7 +355,7 @@ class AffineList(Generic[Mu], MutableSequence):
         --------
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
         >>> data = [1.0, 2.0]
-        >>> ad = AffineList(theta, data)
+        >>> ad = AffineObject(theta, data)
         >>> ad_neg = -ad
         >>> ad_neg(2.0)  # -(2*1 + 4*2) = -10
         -10.0
@@ -353,14 +366,14 @@ class AffineList(Generic[Mu], MutableSequence):
             neg_theta.append(_multiply_scalar(-1.0, theta_i))
         return self._construct_new(neg_theta, self.data)
     
-    def __sub__(self, other: AffineList[Mu] | Iterable[tuple[ParametricObject[Mu, float], any]]):    # self - other
+    def __sub__(self, other: AffineObject[Mu, Data] | Iterable[tuple[ParametricObject[Mu, float], Data]]):    # self - other
         return -( (-self) + other )
 
-    def __rsub__(self, other: AffineList[Mu] | Iterable[tuple[ParametricObject[Mu, float], any]]):   # other - self
+    def __rsub__(self, other: AffineObject[Mu, Data] | Iterable[tuple[ParametricObject[Mu, float], any]]):   # other - self
         return (-self) + other
         
     
-    def compress(self) -> AffineList[Mu]:
+    def compress(self) -> AffineObject[Mu, Data]:
         r"""
         Compress the affine decomposition by combining constant terms.
         
@@ -371,13 +384,13 @@ class AffineList(Generic[Mu], MutableSequence):
         to avoid returning an empty decomposition.
         
         Returns:
-            A new :class:`AffineList` with constant terms merged.
+            A new `AffineObject` with constant terms merged.
             
         Examples
         --------
         >>> theta = [2.0, lambda mu: mu, 3.0]
         >>> data = [1.0, 2.0, 1.0]
-        >>> ad = AffineList(theta, data)
+        >>> ad = AffineObject(theta, data)
         >>> len(ad)
         3
         >>> len(ad.compress()) # Two constant terms combined
@@ -414,7 +427,7 @@ class AffineList(Generic[Mu], MutableSequence):
             
         return self._construct_new(new_theta, new_data)
     
-    def apply2data(self, func: Callable[[any], any]) -> AffineList[Mu]:
+    def apply2data(self, func: Callable[[any], any]) -> AffineObject[Mu, Data]:
         r"""
         Apply a function to each data term in the decomposition and return
         a new affine object with the transformed data but same theta.
@@ -424,54 +437,20 @@ class AffineList(Generic[Mu], MutableSequence):
                 Function to apply to each data term.
         
         Returns:
-            A new :class:`AffineList` with the transformed data terms.
-            
-        Examples
-        --------
-        >>> theta = [lambda mu: mu, lambda mu: mu**2]
-        >>> data = [1.0, 2.0]
-        >>> ad = AffineList(theta, data)
-        >>> ad_squared = ad.apply2data(lambda d: d**2)
-        >>> ad_squared(2.0)  # 2*1^2 + 4*2^2 = 18
-        18.0
-        """
-        new_data = [func(d) for d in self.data]
-        return self._construct_new(self.theta, new_data, _ConstructNew.APPLY2DATA)
-    
-class AffineObject(AffineList[Mu], ParametricObject[Mu, Data]):
-    r"""
-    An affine decomposition of a parametric object.
-
-    Can be evaluated at a parameter value :math:`\mu` to compute the value of the affine decomposition at that parameter, i.e.,
-    
-    .. math::
-        \text{data}(\mu) = \sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q,
-        
-    where :math:`\mu` is a parameter of type ``Mu``, and :math:`\text{data}(\mu)` is an object of type ``Data``.
-    """
-    
-    def __call__(self, mu: Mu) -> Data:
-        r"""
-        Evaluate the affine decomposition at a parameter value.
-        
-        Computes :math:`\sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q`.
-        
-        Args:
-            mu :
-                Single parameter value at which to evaluate the coefficient functions.
+            A new `AffineObject` with the transformed data terms.
             
         Examples
         --------
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
         >>> data = [1.0, 2.0]
         >>> ad = AffineObject(theta, data)
-        >>> ad(3.0)  # 3*1 + 9*2 = 21
-        21.0
+        >>> ad_squared = ad.apply2data(lambda d: d**2)
+        >>> ad_squared(2.0)  # 2*1^2 + 4*2^2 = 18
+        18.0
         """
-        val = self.theta[0](mu) * self.data[0]
-        for theta_q, data_q in zip(self.theta[1:], self.data[1:]):
-            val += theta_q(mu) * data_q
-        return val
+        new_data = [func(d) for d in self.data]
+        return self._construct_new(self.theta, new_data, _ConstructNew.APPLY2DATA)    
+
     
 
 class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
@@ -492,14 +471,14 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
     """Cached transpose."""
     
     
-    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineList[Mu] | Iterable = [], data: list = []):
+    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineObject[Mu, Data] | Iterable = [], data: list = []):
         r"""
         Args:
             theta :
                 List of parameter-dependent coefficient functions. Each function should accept a 
-                parameter value and return a scalar coefficient. Alternatively, an :class:`AffineList` can be provided, in which case its ``theta`` and ``data`` attributes are used. Alternatively, an iterable of alternating ``(theta, data)`` entries can be provided.
+                parameter value and return a scalar coefficient. Alternatively, an `AffineObject` can be provided, in which case its ``theta`` and ``data`` attributes are used. Alternatively, an iterable of alternating ``(theta, data)`` entries can be provided, e.g. ``[(theta1,data1), (theta2,data2)]``.
             data :
-                List of parameter-independent data terms. Or empty if ``theta`` is an :class:`AffineList` or iterable. Do not have to be of the same type, but, if added up, must return an object of type ``Data``. Should support ``*``- and ``@``-multiplication for element-wise- and matrix-multiplication, as well as the ``.T`` attribute for the transposed.
+                List of parameter-independent data terms. Or empty if ``theta`` is an `AffineObject` or iterable. Do not have to be of the same type, but, if added up, must return an object of type ``Data``. Should support ``*``- and ``@``-multiplication for element-wise- and matrix-multiplication, as well as the ``.T`` attribute for the transposed.
         """
         super().__init__(theta, data)
         if len(self) != 0:
@@ -688,36 +667,6 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
     rmatmul.__doc__ = __rmatmul__.__doc__
     
     
-class AffineNonlinear(AffineList[Mu], ParametricObject[Mu, Callable]):
-    r"""
-    An affine decomposition of a parametric nonlinear object.
-    
-    Can be evaluated at a parameter value :math:`\mu` to compute the value of the affine decomposition at that parameter, i.e.,
-    
-    .. math::
-        \text{data}(\mu) = \sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q,
-        
-    where :math:`\mu` is a parameter of type ``Mu``, and :math:`\text{data}(\mu)` is a non-linear object, i.e. a function.
-    """
-    
-    def __call__(self, mu: Mu) -> Callable:
-        r"""
-        Evaluate the affine decomposition at a parameter value.
-        
-        Computes :math:`\sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q`.
-        
-        Args:
-            mu :
-                Single parameter value at which to evaluate the coefficient functions.
-        """
-        def func(*args, **kwargs):
-            val = self.theta[0](mu) * self.data[0](*args, **kwargs)
-            for theta_q, data_q in zip(self.theta[1:], self.data[1:]):
-                val += theta_q(mu) * data_q(*args, **kwargs)
-            return val
-        return func
-    
-    
 def wrap_affinelinear(data: Data | AffineLinear[Mu, Data]) -> AffineLinear[Mu, Data]:
     r"""
     Wrap a data object into an :class:`AffineLinear` with a single constant term.
@@ -742,7 +691,7 @@ def wrap_affinelinear(data: Data | AffineLinear[Mu, Data]) -> AffineLinear[Mu, D
     """
     if isinstance(data, AffineLinear):
         return data
-    elif isinstance(data, AffineList):
+    elif isinstance(data, AffineObject):
         return AffineLinear(data)
     else:
         return AffineLinear([1.0], [data])

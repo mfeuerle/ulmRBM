@@ -4,7 +4,8 @@ from mpi4py import MPI
 from dolfinx import mesh
 import ufl
 
-from ulmRBM.affine import AffineList, AffineObject
+from ulmRBM.core import Mu
+from ulmRBM.affine import AffineObject
 from ulmRBM.fenicsx import utils, FEniCSxSpaceWithDirichletBCs
 from ulmRBM.fenicsx.problems import weak_problem
 
@@ -15,11 +16,11 @@ __all__ = [
 
 def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1], 
                 nt:int=10, nx:list[int]=[10], 
-                f: float | AffineList = 1, 
-                u0: float | AffineList = 0, 
-                u1: float | AffineList = 0, 
-                g: float | AffineList = 0, 
-                exact_sol = None, exact_mu: float = 1.0) -> tuple[AffineList[ufl.Form], AffineList[ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+                f: float | AffineObject = 1, 
+                u0: float | AffineObject = 0, 
+                u1: float | AffineObject = 0, 
+                g: float | AffineObject = 0, 
+                exact_sol = None, exact_mu: float = 1.0) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Parametric wave problem.
     
     Let :math:`\mu>0` be the wave speed. For :math:`I=(0,T)` and :math:`\Omega=\subset \mathbb{R}^d`, :math:`d\in\{1,2\}` consider the wave equation
@@ -52,13 +53,13 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
         nx: 
             Number of mesh cells in each spatial direction, where ``len(nx)`` is the spatial dimension :math:`d`.
         f:
-            (Parametric) right-hand side. Either a scalar, or an affine decomposition compatible with `utils.interpolate_function`.
+            (Parametric) right-hand side. Any object compatible with `utils.interpolate_function`, or an affine decomposition compatible with `utils.interpolate_function`.
         u0:
-            (Parametric) Initial condition for :math:`u(0)`. Either a scalar, or an affine decomposition compatible with `utils.interpolate_function`.
+            (Parametric) Initial condition for :math:`u(0)`. Any object compatible with `utils.interpolate_function`, or an affine decomposition compatible with `utils.interpolate_function`.
         u1:
-            (Parametric) Initial velocity for :math:`u_t(0)`. Either a scalar, or an affine decomposition compatible with `utils.interpolate_function`.
+            (Parametric) Initial velocity for :math:`u_t(0)`. Any object compatible with `utils.interpolate_function`, or an affine decomposition compatible with `utils.interpolate_function`.
         g:
-            (Parametric) Dirichlet boundary condition on :math:`I\times\partial\Omega`. Either a scalar, or an affine decomposition compatible with `utils.interpolate_function`.
+            (Parametric) Dirichlet boundary condition on :math:`I\times\partial\Omega`. Any object compatible with `utils.interpolate_function`, or an affine decomposition compatible with `utils.interpolate_function`.
         exact_sol:
             Exact solution of the problem, which can be parameter-dependent. If given, :math:`f,u0,u1,g` are ignored and calculated from the exact solution instead. Compatible with `utils.interpolate_function`.
         exact_mu:
@@ -100,13 +101,13 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
     if exact_sol is not None:
         data = (exact_sol, exact_mu)
     else:
-        if not isinstance(f, AffineList): 
+        if not isinstance(f, AffineObject): 
             f = AffineObject([1.0], [f])  # right-hand side
-        if not isinstance(u0, AffineList): 
+        if not isinstance(u0, AffineObject): 
             u0 = AffineObject([1.0], [u0])  # initial condition u(0)
-        if not isinstance(u1, AffineList): 
+        if not isinstance(u1, AffineObject): 
             u1 = AffineObject([1.0], [u1])  # initial velocity u_t(0)
-        if not isinstance(g, AffineList): 
+        if not isinstance(g, AffineObject): 
             g = AffineObject([1.0], [g])  # boundary condition on IxGamma
         data = (f, [u0, g], [-u1])
     

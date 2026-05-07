@@ -4,7 +4,7 @@ from dolfinx import mesh, fem
 import ufl
 
 from ulmRBM.core import Mu
-from ulmRBM.affine import AffineList, AffineObject, AffineLinear, wrap_affinelinear
+from ulmRBM.affine import AffineObject, AffineLinear, wrap_affinelinear
 from ulmRBM.fenicsx import utils, AffineDirichletBC, FEniCSxSpaceWithDirichletBCs
 
 
@@ -17,7 +17,7 @@ __all__ = [
     ]
 
 
-def assemble_matrix(B: ufl.Form | AffineList[ufl.Form]) -> csr_array | AffineLinear[Mu, csr_array]:
+def assemble_matrix(B: ufl.Form | AffineObject[Mu, ufl.Form]) -> csr_array | AffineLinear[Mu, csr_array]:
     r"""Assemble the matrix of a (parametric) bilinear form.
     
     Args:
@@ -29,13 +29,13 @@ def assemble_matrix(B: ufl.Form | AffineList[ufl.Form]) -> csr_array | AffineLin
     """
     
     assemble = lambda B: csr_array(fem.assemble_matrix(fem.form(B)).to_scipy())
-    if isinstance(B, AffineList):
+    if isinstance(B, AffineObject):
         return AffineLinear(B.compress().apply2data(assemble))
     else:
         return assemble(B)
 
 
-def assemble_vector(l: ufl.Form | AffineList[ufl.Form]) -> np.ndarray | AffineLinear[Mu,np.ndarray]:
+def assemble_vector(l: ufl.Form | AffineObject[Mu, ufl.Form]) -> np.ndarray | AffineLinear[Mu,np.ndarray]:
     r"""Assemble the vector of a (parametric) linear form.
     
     Args:
@@ -47,14 +47,14 @@ def assemble_vector(l: ufl.Form | AffineList[ufl.Form]) -> np.ndarray | AffineLi
     """
     
     assemble = lambda l: fem.assemble_vector(fem.form(l)).array
-    if isinstance(l, AffineList):
+    if isinstance(l, AffineObject):
         return AffineLinear(l.compress().apply2data(assemble))
     else:
         return assemble(l)
     
     
-def apply_dirichletbc(B: np.ndarray | sparray | AffineList[np.ndarray | sparray], 
-                      f: np.ndarray | AffineList[np.ndarray], 
+def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sparray], 
+                      f: np.ndarray | AffineObject[Mu, np.ndarray], 
                       U: FEniCSxSpaceWithDirichletBCs, 
                       V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray]]:
     r"""Apply Dirichlet boundary conditions to a linear system.
@@ -110,8 +110,8 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineList[np.ndarray | sparray]
     return B.compress(), f.compress()
 
 
-def assemble_system(B: ufl.Form | AffineList[ufl.Form],
-                    f: ufl.Form | AffineList[ufl.Form],
+def assemble_system(B: ufl.Form | AffineObject[Mu, ufl.Form],
+                    f: ufl.Form | AffineObject[Mu, ufl.Form],
                     U: FEniCSxSpaceWithDirichletBCs, 
                     V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu,csr_array], AffineLinear[Mu,np.ndarray]]:
     r"""Assemble a (parametric) linear system and applying Dirichlet boundary conditions.
@@ -124,7 +124,7 @@ def assemble_system(B: ufl.Form | AffineList[ufl.Form],
 
 def weak_problem(msh: mesh.Mesh, 
                  operator: list[AffineObject, AffineObject, AffineObject], 
-                 data: list[AffineList, list[AffineList], list[AffineList]] | list[any,any], 
+                 data: list[AffineObject, list[AffineObject], list[AffineObject]] | list[any,any], 
                  dbdry_U: list = [], 
                  nbdry_U: list = [], 
                  dbdry_V: list = None, 
@@ -134,7 +134,7 @@ def weak_problem(msh: mesh.Mesh,
                  B_space: fem.FunctionSpace | None = None, 
                  C_space: fem.FunctionSpace | None = None, 
                  F_space: fem.FunctionSpace | None = None, 
-                 H_spaces: list[fem.FunctionSpace] | None = None) -> tuple[AffineList[ufl.Form], AffineList[ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+                 H_spaces: list[fem.FunctionSpace] | None = None) -> tuple[AffineObject[Mu,ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Weak formulation of a general 2nd-order operator with
     inhomogeneous Dirichlet and Neumann boundary data. Suitable e.g. for elliptic problems or the wave equation.
 
