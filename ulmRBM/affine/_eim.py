@@ -101,9 +101,9 @@ def empirical_interpolation[Point](func: Callable[[Mu, Iterable[Point]], Iterabl
     
     mu_idx, *x_idx = np.unravel_index(np.argmax(abs(G)), G.shape)
     
-    q = G[mu_idx]
+    q  = G[mu_idx]
     qx = G[mu_idx, *x_idx]
-    g = q/qx
+    g  = q/qx
     
     if continuous:
         q_continuous = partial(func, mus[mu_idx])
@@ -112,7 +112,6 @@ def empirical_interpolation[Point](func: Callable[[Mu, Iterable[Point]], Iterabl
     
     GQ = g.reshape(1,*g.shape)
     TQ = np.asarray(x_idx).reshape(1,-1)
-    
     
     for i in range(1, Nmax):
         R = G - _eim_interpolation(G, GQ, TQ)
@@ -127,9 +126,9 @@ def empirical_interpolation[Point](func: Callable[[Mu, Iterable[Point]], Iterabl
             rx = R[mu_idx, *x_idx]
             g  = r/rx
         else:
-            q = G[mu_idx]
+            q  = G[mu_idx]
             qx = G[mu_idx, *x_idx]
-            g = q/qx
+            g  = q/qx
         
         if continuous:
             q_continuous  = partial(func, mus[mu_idx])
@@ -143,8 +142,6 @@ def empirical_interpolation[Point](func: Callable[[Mu, Iterable[Point]], Iterabl
         
         GQ = np.vstack([GQ, [g]])
         TQ = np.vstack([TQ, [x_idx]])
-        
-
         
     if abs(R[mu_idx, *x_idx]) < tol:
         print(f"EIM converged after {len(GQ):3d} iterations with error {abs(R[mu_idx, *x_idx]):.2e} < tol={tol:.2e}.")

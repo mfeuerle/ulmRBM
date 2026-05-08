@@ -272,9 +272,7 @@ class FOM(Generic[Mu]):
         :math:`S(\mu) := R_V^{-1} B(\mu)` where :math:`R_V : V \to V'` is the Riesz map of the test space.
         This function returns :math:`S(\mu) u` as a function of :math:`\mu`.
         
-        If a custom supremizer function was provided during initialization, it is used. Otherwise, the supremizer is constructed from the system matrix and test space inner product. Thereby, if the test space inner product is parameter-independent, the supremizer :math:`S(\mu)` is affine with respect to :math:`\mu` and the result is an :class:`AffineLinear`. Otherweise, a parameter-dependend function with no additional structure is resturned.
-        
-        This supremizer is used for `Trial2TestROM`.
+        If a custom supremizer function was provided during initialization, it is used. Otherwise, the supremizer is constructed from the system matrix and test space inner product. Thereby, if the test space inner product is parameter-independent, the supremizer :math:`S(\mu)` is affine with respect to :math:`\mu` and the result is an `AffineLinear`. Otherweise, a parameter-dependend function with no additional structure is resturned.
         
         Args:
             u:

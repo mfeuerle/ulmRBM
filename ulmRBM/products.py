@@ -3,6 +3,8 @@ Inner product classes for parametric spaces.
 
 Abstract Inner Product Classes
 ------------------------------
+Base classes, not intended for direct instantiation by the user.
+
 .. autosummary::
     :toctree: generated/
     
@@ -10,8 +12,10 @@ Abstract Inner Product Classes
      InverseInnerProduct
      RestrictedInnerProduct
      
-Concrete Inner Product Classes
+Inner Product Classes
 ------------------------------
+Concrete inner product implementations.
+
 .. autosummary::
     :toctree: generated/
     
@@ -19,7 +23,7 @@ Concrete Inner Product Classes
      MatrixInnerProduct
      OperatorInnerProduct
      
-Funtions
+Functions
 ------------------------------
 .. autosummary::
     :toctree: generated/
@@ -100,13 +104,41 @@ class InnerProduct(ParametricLinear[Mu, Matrix]):
     
     For an inner product :math:`(\cdot, \cdot)_V` with matrix representation :math:`M_V`, i.e. :math:`(u, v)_V = u^T M_V v`, the dual inner product on :math:`V'` is typically given by :math:`(f, g)_{V'} = f^T M_V^{-1} g`.
     
-    By default, :attr:`dual` returns the inverse of the inner product. However, this field can be set manually to a different inner product if needed (e.g., for handling Dirichlet boundary conditions).
+    By default, :attr:`dual` returns the inverse of the inner product. However, this field can be set manually to a different inner product if needed (e.g., if there is a faster way to compute it).
     """
     
     _dual: InnerProduct[Mu] | None = None
     """Private storage for an explicitly set dual inner product."""
     __inverse: InnerProduct[Mu] | None = None
     """Private cached storage for the inverse inner product."""
+    
+    shape: tuple[int, int]
+    r"""Shape ``(n, n)`` of the inner product operator, where ``n`` is the dimension of the vector space :math:`V`."""
+        
+    is_parametric: bool
+    """Whether the inner product depends on the parameter (``True``) or is constant w.r.t. the parameter (``False``)."""
+    
+    
+    @property
+    def _inverse(self) -> InnerProduct[Mu]:
+        if self.__inverse is None:
+            self.__inverse = self._get_inverse()
+            self.__inverse.__inverse = self
+        return self.__inverse
+    
+    @property
+    def dual(self) -> InnerProduct[Mu]:
+        if self._dual is None:
+            return self._inverse
+        else:
+            return self._dual
+        
+    @dual.setter
+    def dual(self, dual: InnerProduct[Mu]):
+        if self._dual is not None or dual._dual is not None:
+            raise ValueError("Cannot set dual: one of the inner products has already a dual product linked.")
+        self._dual = dual
+        dual._dual = self
     
     
     def __init__(self, shape: tuple[int, int], is_parametric: bool):
@@ -121,18 +153,14 @@ class InnerProduct(ParametricLinear[Mu, Matrix]):
         
         if shape[0] != shape[1]:
             raise ValueError("Inner product must be square.")
+        self.shape = shape
+        self.is_parametric = is_parametric
         
-        self.shape: tuple[int, int] = shape
-        r"""Shape ``(n, n)`` of the inner product operator, where ``n`` is the dimension of the vector space :math:`V`."""
-        
-        self.is_parametric: bool = is_parametric
-        """Wheter the inner product depends on the parameter (``True``) or is constant w.r.t. the parameter (``False``)."""
         
     def __repr__(self):
         parametric = "Parametric" if self.is_parametric else "Constant"
         shape = f"({self.shape[0]}, {self.shape[1]})"
         return f"<{parametric} {self.__class__.__name__} of shape {shape}>"
-        
     
     
     def __call__(self, mu: Mu) -> LinearOperator:
@@ -267,28 +295,6 @@ class InnerProduct(ParametricLinear[Mu, Matrix]):
             An inner product representing :math:`M_V^{-1}`.
         """
         return InverseInnerProduct(self)
-    
-    @property
-    def _inverse(self) -> InnerProduct[Mu]:
-        if self.__inverse is None:
-            self.__inverse = self._get_inverse()
-            self.__inverse.__inverse = self
-        return self.__inverse
-    
-    
-    @property
-    def dual(self) -> InnerProduct[Mu]:
-        if self._dual is None:
-            return self._inverse
-        else:
-            return self._dual
-        
-    @dual.setter
-    def dual(self, dual: InnerProduct[Mu]):
-        if self._dual is not None or dual._dual is not None:
-            raise ValueError("Cannot set dual: one of the inner products has already a dual product linked.")
-        self._dual = dual
-        dual._dual = self
 
 
 class InverseInnerProduct(InnerProduct[Mu]):
