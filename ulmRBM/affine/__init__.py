@@ -8,16 +8,22 @@ Affine Classes
    
     AffineObject
     AffineLinear
+    AffineFunction
     
 Approximating Affine Decompositions
 -----------------------------------
+.. autosummary::
+    :toctree: generated/
     
-Wrapper Utilities
+    empirical_interpolation
+    
+Utilities
 -----------------
 .. autosummary::
     :toctree: generated/
     
     wrap_affinelinear
+    ScalarComponentList
 """
 
 from ._affine import *

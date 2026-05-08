@@ -9,13 +9,15 @@ from __future__ import annotations
 __all__ = [
     'AffineObject',
     'AffineLinear',
-    'wrap_affinelinear'
+    'AffineFunction',
+    'wrap_affinelinear',
+    'ScalarComponentList',
 ]
 
 from numbers import Number
-from typing import Generic
-from collections.abc import Iterable, MutableSequence, Callable
+from collections.abc import Iterable, MutableSequence, Callable, Sequence
 from enum import IntEnum
+import numpy as np
 
 from ulmRBM.core import Mu, Data, ParametricObject, ParametricLinear, TrivialParametric, wrap_scalar, unwrap
 
@@ -96,7 +98,7 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         """Whether the affine list contains any parameter-dependent terms."""
         return any(not isinstance(theta, TrivialParametric) for theta in self.theta)
     
-    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineObject[Mu, Data] | Iterable[tuple[ParametricObject[Mu, float], any]] = [], data: list = []):
+    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineObject[Mu, Data] | Iterable[tuple[ParametricObject[Mu, float], any]] = [], data: list = None):
         r"""
         Args:
             theta :
@@ -106,7 +108,7 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
                 List of parameter-independent data terms, or empty if ``theta`` is an `AffineObject` or iterable.
         """
         
-        if not data:
+        if data is None:
             if isinstance(theta, AffineObject):
                 data  = theta.data
                 theta = theta.theta
@@ -667,6 +669,28 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
     rmatmul.__doc__ = __rmatmul__.__doc__
     
     
+class AffineFunction(AffineObject[Mu,Callable]):
+    r"""
+    An affine decomposition of a parametric function.
+    
+    Can be evaluated at a parameter value :math:`\mu` to assemble a function,
+    
+    .. math::
+        \text{data}(\mu) = \sum_{q=1}^{Q} \theta_q(\mu) \cdot \text{data}_q,
+        
+    where :math:`\mu` is a parameter of type ``Mu``, and :math:`\text{data}(\mu)` is a callable object, i.e. a function, e.g. use it like :math:`\text{data}(\mu)(x)`.
+    """
+    
+    def __call__(self, mu: Mu) -> Callable:
+        theta = [t(mu) for t in self.theta]
+        def func(*args, **kwargs):
+            val = theta[0] * self.data[0](*args, **kwargs)
+            for theta_q, data_q in zip(theta[1:], self.data[1:]):
+                val += theta_q * data_q(*args, **kwargs)
+            return val
+        return func
+    
+    
 def wrap_affinelinear(data: Data | AffineLinear[Mu, Data]) -> AffineLinear[Mu, Data]:
     r"""
     Wrap a data object into an :class:`AffineLinear` with a single constant term.
@@ -695,3 +719,32 @@ def wrap_affinelinear(data: Data | AffineLinear[Mu, Data]) -> AffineLinear[Mu, D
         return AffineLinear(data)
     else:
         return AffineLinear([1.0], [data])
+    
+    
+class ScalarComponentList(Sequence):
+    r"""Wrapper for a vector valued function into a list of scalar component functions.
+    
+    Given a vector-valued function :math:`f(\mu) = (f_1(\mu), \dots, f_n(\mu))`, this class provides a list-like interface to access the individual scalar component functions :math:`f_i(\mu)`, so that this class 
+    can be used as the ``theta`` argument in an :class:`AffineObject`.
+    
+    It provides a simple caching mechanism that caches :math:`f(\mu)` for the last parameter value :math:`\mu` to avoid redundant evaluations of the vector-valued function :math:`f` when accessing multiple components :math:`f_1,\dots,f_n` for the same parameter value.
+    """
+    
+    _last_mu   = None
+    _last_func = None
+    
+    def __init__(self, func, n):
+        self._func = func
+        self._thetas = np.array([lambda mu, i=i: self._eval_theta(mu)[i] for i in range(n)])
+        
+    def _eval_theta(self, mu):
+        if mu is not self._last_mu:
+            self._last_mu   = mu
+            self._last_func = self._func(mu)
+        return self._last_func
+        
+    def __getitem__(self, key):
+        return self._thetas[key]
+    
+    def __len__(self):
+        return len(self._thetas)
