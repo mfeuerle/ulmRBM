@@ -473,7 +473,7 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
     """Cached transpose."""
     
     
-    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineObject[Mu, Data] | Iterable = [], data: list = []):
+    def __init__(self, theta: list[ParametricObject[Mu, float]] | AffineObject[Mu, Data] | Iterable = [], data: list = None):
         r"""
         Args:
             theta :

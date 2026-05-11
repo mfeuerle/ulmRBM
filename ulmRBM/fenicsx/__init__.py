@@ -24,9 +24,11 @@ Functions
    :toctree: generated/
    
     free_dofs
+    interpolate_function_eim
 """
 
 from ._dirichletbcs import *
+from ._eim import *
 
 _submodules = [
     'utils',
