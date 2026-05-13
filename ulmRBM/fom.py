@@ -79,6 +79,24 @@ class FOM(Generic[Mu]):
     _supremizer_func: Callable[[Vector, FOM[Mu]], AffineLinear[Mu, Vector]] | None = None
     r"""Internal storage if a custom supremizer function is provided."""
     
+    _eigsh_options_stability: dict = {
+        'v0': None,
+        'ncv': None,
+        'maxiter': None,
+        'tol': 1e-10,
+        'rng': None
+    }
+    r"""Options for the eigenvalue solver used in the default stability constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``fom._eigsh_options['tol'] = 1e-8``."""
+    
+    _eigsh_options_continuity: dict = {
+        'v0': None,
+        'ncv': None,
+        'maxiter': None,
+        'tol': 1e-10,
+        'rng': None
+    }
+    r"""Options for the eigenvalue solver used in the default continuity constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``fom._eigsh_options['tol'] = 1e-8``."""
+    
     @property
     def dim(self):
         p = self.l.shape[0] if self.l is not None else None
@@ -172,6 +190,9 @@ class FOM(Generic[Mu]):
                 
         Returns:
             Stability constant :math:`\beta(\mu) > 0`.
+            
+        .. note::
+            If the eigenvalue problem fails to converge, consider adjusting the options in ``fom._eigsh_options_stability`` or providing a custom stability function.
         """
         if self._stability_fun is not None:
             return self._stability_fun(mu, self)
@@ -179,7 +200,7 @@ class FOM(Generic[Mu]):
             return self._stability(mu)
     
     def _stability(self, mu: Mu) -> float:
-        eigsh_opts = {}
+        eigsh_opts = self._eigsh_options_stability.copy()
         if self.B.shape[0] == self.B.shape[1]:
             BVinvB = OperatorInnerProduct(self.B, self.V.dual, self.solver)
             eigsh_opts['OPinv'] = BVinvB.dual(mu)
@@ -212,6 +233,9 @@ class FOM(Generic[Mu]):
                 
         Returns:
             Continuity constant :math:`\gamma(\mu) < \infty`.
+            
+        .. note::
+            If the eigenvalue problem fails to converge, consider adjusting the options in ``fom._eigsh_options_continuity`` or providing a custom continuity function.
         """
         if self._continuity_fun is not None:
             return self._continuity_fun(mu, self)
@@ -219,7 +243,7 @@ class FOM(Generic[Mu]):
             return self._continuity(mu)
     
     def _continuity(self, mu: Mu) -> float:
-        eigsh_opts = {}
+        eigsh_opts = self._eigsh_options_continuity.copy()
         BVinvB = self.V.dual.restrict(self.B(mu))
         eigsh_opts['A'] = BVinvB(mu)
         eigsh_opts['M'] = self.U(mu)
@@ -336,7 +360,7 @@ class GalerkinFOM(FOM[Mu]):
         super().__init__(B, f, U, U, l, stability, continuity, solver)
         
     def _stability(self, mu: Mu) -> float:
-        eigsh_opts = {}
+        eigsh_opts = self._eigsh_options_stability.copy()
         B = self.B(mu)
         eigsh_opts['A'] = 0.5 * (B.T + B)    
         eigsh_opts['M'] = self.U(mu)
@@ -348,7 +372,7 @@ class GalerkinFOM(FOM[Mu]):
         return val
     
     def _continuity(self, mu: Mu) -> float:
-        eigsh_opts = {}
+        eigsh_opts = self._eigsh_options_continuity.copy()
         B = self.B(mu)
         eigsh_opts['A'] = 0.5 * (B.T + B)
         eigsh_opts['M'] = self.U(mu)

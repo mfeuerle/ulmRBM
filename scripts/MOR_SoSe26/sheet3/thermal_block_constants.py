@@ -27,15 +27,17 @@ fom_g  = GalerkinFOM(B, f, U_H10, solver=solver)
 continuity_exact = lambda mu: np.max(mu)
 coercivity_exact = lambda mu: np.min(mu)
 
-mus = [np.random.uniform(*mu_range, size=nblocks) for _ in range(50)]
+mus = [np.random.uniform(*mu_range, size=nblocks)+1e-5 for _ in range(500)]
 
+
+print(f"Calculating constants for {len(mus)} random parameters...")
 start = time.time()
 err_continuity_pg = [fom_pg.continuity(mu) - continuity_exact(mu) for mu in mus]
 print(f"Max. error in continuity constant (PG): {np.max(np.abs(err_continuity_pg)):.2e}\t time taken: {time.time() - start:.2f} seconds")
 
 start = time.time()
 err_continuity_g = [fom_g.continuity(mu) - continuity_exact(mu) for mu in mus]
-print(f"Max. error in continuity constant (G): {np.max(np.abs(err_continuity_g)):.2e}\t\t time taken: {time.time() - start:.2f} seconds")
+print(f"Max. error in continuity constant  (G): {np.max(np.abs(err_continuity_g)):.2e}\t time taken: {time.time() - start:.2f} seconds")
 
 start = time.time()
 err_stability_pg  = [fom_pg.stability(mu)  - coercivity_exact(mu) for mu in mus]
@@ -43,4 +45,4 @@ print(f"Max. error in stability constant (PG): {np.max(np.abs(err_stability_pg))
 
 start = time.time()
 err_stability_g  = [fom_g.stability(mu)  - coercivity_exact(mu) for mu in mus]
-print(f"Max. error in stability constant (G): {np.max(np.abs(err_stability_g)):.2e}\t\t time taken: {time.time() - start:.2f} seconds")
+print(f"Max. error in stability constant  (G): {np.max(np.abs(err_stability_g)):.2e}\t\t time taken: {time.time() - start:.2f} seconds")
