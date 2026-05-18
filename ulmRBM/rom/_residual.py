@@ -52,15 +52,15 @@ class ResidualCalculator(Generic[Mu]):
     
     Let :math:`f(\mu)` and :math:`B(\mu)` be the right-hand side and system matrix of the full-order model,
     :math:`U_{\text{basis}}(\mu)` the reduced basis of the trial space, and :math:`u` the reduced solution vector.
-    Then, :meth:`norm2` computes the square of the dual norm of the residual:
+    Then, :meth:`dual_norm` computes the dual norm of the residual:
     
     .. math::
-        \|r(\mu; u)\|_{V'}^2 = \|f(\mu) - B(\mu) U_{\text{basis}}(\mu) u\|_{V'}^2.
+        \|r(\mu; u)\|_{V'} = \|f(\mu) - B(\mu) U_{\text{basis}}(\mu) u\|_{V'}.
         
     The residual calculater works in two phases:
     
     1. **Offline phase**: Precompute expensive data via :meth:`set_basis`, :meth:`add_basis` and :meth:`rotate_basis` to define :math:`U_{\text{basis}}(\mu)`.
-    2. **Online phase**: Provide fast computation of :math:`\|r(\mu; u)\|_{V'}^2` via :meth:`norm2` using the precomputed data.
+    2. **Online phase**: Provide fast computation of :math:`\|r(\mu; u)\|_{V'}` via :meth:`dual_norm` using the precomputed data.
     """
     
     
@@ -126,9 +126,9 @@ class ResidualCalculator(Generic[Mu]):
         ...
         
     @abstractmethod
-    def norm2(self, mu: Mu, u: Vector) -> float:
+    def dual_norm(self, mu: Mu, u: Vector) -> float:
         r"""
-        Compute the squared dual norm of the residual at parameter :math:`\mu` for the reduced solution :math:`u`, i.e.
+        Compute the dual norm of the residual at parameter :math:`\mu` for the reduced solution :math:`u`, i.e.
         
         .. math::
             \|r(\mu; u)\|_{V'}^2 = \|f(\mu) - B(\mu) U_{\text{basis}}(\mu) u\|_{V'}^2
@@ -175,15 +175,15 @@ class DirectResidual(ResidualCalculator[Mu]):
     def rotate_basis(self, rotation: np.ndarray):
         self.set_basis(self.basis @ rotation)
         
-    def norm2(self, mu: Mu, u: Vector) -> float:
-        f"""{ResidualCalculator.norm2.__doc__}
+    def dual_norm(self, mu: Mu, u: Vector) -> float:
+        f"""{ResidualCalculator.dual_norm.__doc__}
     
         ... note::
             This method is not online-efficient, as it requires full-order operations.
         """
         f = self.fom.f(mu)
         Bu = self.fom.B(mu) @ (self.basis(mu) @ u)
-        return self.fom.V.dual.inner(mu, f -  Bu)
+        return self.fom.V.dual.norm(mu, f -  Bu)
     
 class AffineResidual(ResidualCalculator[Mu]):
     r"""
@@ -192,7 +192,7 @@ class AffineResidual(ResidualCalculator[Mu]):
     .. math::
         \|r(\mu; u)\|_{V'}^2 = \|f(\mu) - B(\mu) U_{\text{basis}}(\mu) u\|_{V'}^2
         
-    by preccomputing all full-order operations before calling :meth:`norm2`.
+    by preccomputing all full-order operations before calling :meth:`dual_norm`.
     Thereby, :math:`f(\mu)` and :math:`B(\mu)` are the right-hand side and system matrix of the full-order model,
     :math:`U_{\text{basis}}` the reduced basis of the trial space, :math:`u` a element of the reduced trial space and :math:`V'` the dual space of the test space.
     
@@ -280,7 +280,7 @@ class AffineResidual(ResidualCalculator[Mu]):
         self.r = self.r[:, :self._Qf]
         self.R = self.R[:self._Qf, :self._Qf]
         self.add_basis(basis)
-        
+    
     def add_basis(self, basis: AffineLinear[Mu, Vector]):
         f"""
         {ResidualCalculator.add_basis.__doc__}
@@ -313,11 +313,11 @@ class AffineResidual(ResidualCalculator[Mu]):
         self.R[self._Qf:, :] = rotation.T @ self.R[self._Qf:, :]
         self.R[:, self._Qf:] = self.R[:, self._Qf:] @ rotation
         
-    def norm2(self, mu: Mu, u: Vector) -> float:
-        f"""{ResidualCalculator.norm2.__doc__}
+    def dual_norm(self, mu: Mu, u: Vector) -> float:
+        f"""{ResidualCalculator.dual_norm.__doc__}
     
         ... note::
             This method is online-efficient, as it utilizes a precomputed affine decomposition of the residual.
         """
         theta = self.theta(mu, u)
-        return np.abs(theta.T @ self.R @ theta) # ensure non-negativity to avoid NaN due to numerical errors
+        return np.sqrt(abs(theta.T @ self.R @ theta)) # abs to ensure non-negativity to avoid NaN due to numerical errors

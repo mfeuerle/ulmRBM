@@ -53,9 +53,9 @@ class ROM(FOM[Mu]):
     
     fom: FOM[Mu]
     """Underlying full-order model."""
-    U_basis: AffineLinear[Mu, Vector]
+    U_basis: AffineLinear[Mu, Vector] | None
     """:math:`(n,N)` trial space basis matrix, where :math:`N` is the dimension of the reduced trial space."""
-    V_basis: AffineLinear[Mu, Vector]
+    V_basis: AffineLinear[Mu, Vector] | None
     """:math:`(m,M)` test space basis matrix, where :math:`M` is the dimension of the reduced test space."""
     estimate_fom_stability: StabilityEstimator[Mu]
     r"""Estimator :math:`\beta_{\text{LB}}(\mu)` for the FOM stability constant, required for error estimation."""
@@ -64,8 +64,8 @@ class ROM(FOM[Mu]):
     residual: ResidualCalculator[Mu]
     r"""Calculator for the dual norm of the residual, required for error estimation."""
     
-    _U_basis: AffineLinear[Mu, Vector] = None
-    _V_basis: AffineLinear[Mu, Vector] = None
+    _U_basis: AffineLinear[Mu, Vector] | None = None
+    _V_basis: AffineLinear[Mu, Vector] | None = None
     
     _need_assemble: bool
     r"""Flag to indicate whether the reduced system matrices and vectors need to be reassembled."""
@@ -114,8 +114,6 @@ class ROM(FOM[Mu]):
         
     @property
     def estimate_fom_continuity(self) -> ContinuityEstimator[Mu]:
-        if self._estimate_fom_continuity is None:
-            raise RuntimeError("Set 'estimate_fom_continuity' before accessing it.")
         return self._estimate_fom_continuity
     @estimate_fom_continuity.setter
     def estimate_fom_continuity(self, estimator: ContinuityEstimator[Mu] | None):
@@ -125,8 +123,6 @@ class ROM(FOM[Mu]):
         
     @property
     def estimate_fom_stability(self) -> StabilityEstimator[Mu]:
-        if self._estimate_fom_stability is None:
-            raise RuntimeError("Set 'estimate_fom_stability' before accessing it.")
         return self._estimate_fom_stability
     @estimate_fom_stability.setter
     def estimate_fom_stability(self, estimator: StabilityEstimator[Mu] | None):
@@ -136,8 +132,6 @@ class ROM(FOM[Mu]):
         
     @property
     def residual(self) -> ResidualCalculator[Mu]:
-        if self._residual is None:
-            raise RuntimeError("Set 'residual' before accessing it.")
         return self._residual
     @residual.setter
     def residual(self, residual: ResidualCalculator[Mu] | None):
@@ -147,7 +141,7 @@ class ROM(FOM[Mu]):
         
     @property
     def dim(self):
-        return (0 if self.U_basis is None else self.U_basis.shape[1], 
+        return (0 if self.U_basis is None else self.U_basis.shape[1],
                 0 if self.V_basis is None else self.V_basis.shape[1],
                 self.fom.dim[2])
 
@@ -194,7 +188,7 @@ class ROM(FOM[Mu]):
             if fom.V.is_parametric:
                 residual = ResidualOptions.DIRECT
                 from warnings import warn
-                warn("FOM has parameter-dependent test space inner product, using 'DirectResidual' for residual computation. Thus, error estimation IS NOT online-efficient.")
+                warn("FOM has parameter-dependent test space inner product, using 'DirectResidual' for residual computation as the residula is not affine. Thus, error estimation IS NOT online-efficient.")
             else:
                 residual = ResidualOptions.AFFINE
         if not isinstance(residual, ResidualCalculator):
@@ -230,7 +224,7 @@ class ROM(FOM[Mu]):
                 New trial basis vectors :math:`(n, k)` to append.
         """
         basis = wrap_affinelinear(basis)
-        if len(basis.shape) == 1: 
+        if len(basis.shape) == 1:
             basis = basis.apply2data(lambda dq: dq.reshape(-1,1))
         if basis.shape[0] != self.fom.dim[0]:
             raise ValueError("Basis vector has incompatible dimension.")
@@ -384,8 +378,8 @@ class ROM(FOM[Mu]):
             Due to taking a square root, the error estimator looses around 
         """
         if u is None: u = self.solve(mu)
-        return np.sqrt(self.residual.norm2(mu, u)) / self.estimate_fom_stability(mu)
-    
+        return self.residual.dual_norm(mu, u) / self.estimate_fom_stability(mu)
+
     def reconstruct(self, mu: Mu, u: Vector = None) -> Vector:
         r"""
         Reconstruct a full-order function from the reduced coefficients.
@@ -401,7 +395,7 @@ class ROM(FOM[Mu]):
         Returns:
             Reconstructed full-order function :math:`(n,)` or :math:`(n,k)`.
         """
-        if u is None: u = self.solve(mu) 
+        if u is None: u = self.solve(mu)
         return self.U_basis(mu) @ u
     
     

@@ -24,8 +24,12 @@ def _scale_func(alpha, func):
     """Scale a function by a scalar factor alpha."""
     return lambda *args, **kwargs: alpha * np.asarray(func(*args, **kwargs))
 
+def _sub_func(func1, func2):
+    """Subtract two functions."""
+    return lambda *args, **kwargs: func1(*args, **kwargs) - func2(*args, **kwargs)
+
 def _eim_interpolation(G, GQ, TQ):
-    """EIM interpolation of [g1,g2,...] (discrete x). """
+    """EIM interpolation of [g1,g2,...] (discrete in x). """
     GGQ = GQ[:,*(x for x in TQ.T)].T
     GG  = G [:,*(x for x in TQ.T)].T
     alpha = np.linalg.solve(GGQ, GG)
@@ -40,7 +44,7 @@ def _eim_interpolation_continuous(g, GQ, GQ_continuous, TQ):
 
 
 def _eim_alpha(func, GQ, TQ, points):
-    """EIM interpolation coefficients alpha(mu) for func(mu) (continous in mu). """
+    """EIM interpolation coefficients alpha(mu) for func(mu). """
     GGQ = GQ[:,*(x for x in TQ.T)].T
     pointsQ = points[TQ[:,0]]
     
@@ -66,7 +70,7 @@ def empirical_interpolation[Point](func: Callable[[Mu, Iterable[Point]], Iterabl
     Given a parametric function :math:`f_\mu:\Omega\to R`, :math:`\mu\in\mathcal{P}`, the EIM approximates this function by an affine decomposition w.r.t. the parameter, i.e.
     
     .. math::
-        f_\mu \approx f_\mu^{\text{EIM}} = \sum_{q=1}^Q \alpha_i(\mu) g_i
+        f_\mu \approx f_\mu^{\text{EIM}} = \sum_{i=1}^Q \alpha_i(\mu) g_i
     
     Thereby, :math:`g_i` are either given by :math:`g_i = f_{\mu_i}` (``residual=False``) or by :math:`g_i = f_{\mu_i} - f_{\mu_i}^{\text{EIM},i-1}` (``residual=True``) for some :math:`\mu_i\in\mathcal{P}`, where :math:`f_{\mu_i}^{\text{EIM},i-1}` is the EIM approximation of :math:`f_{\mu_i}` using only :math:`g_1,\dots,g_{i-1}`.
     
@@ -133,18 +137,18 @@ def empirical_interpolation[Point](func: Callable[[Mu, Iterable[Point]], Iterabl
         
         if residual:
             r  = R[mu_idx]
-            rx = R[mu_idx, *x_idx]
+            rx = r[*x_idx]
             g  = r/rx
         else:
             q  = G[mu_idx]
-            qx = G[mu_idx, *x_idx]
+            qx = q[*x_idx]
             g  = q/qx
         
         if continuous:
             q_continuous  = partial(func, mus[mu_idx])
             if residual:
                 Iq_continuous = _eim_interpolation_continuous(G[mu_idx], GQ, GQ_continuous, TQ)
-                r_continuous  = lambda x, q=q_continuous, Iq=Iq_continuous: q(x) - Iq(x)
+                r_continuous  = _sub_func(q_continuous, Iq_continuous)
                 g_continuous  = _scale_func(1/rx, r_continuous)
             else:
                 g_continuous  = _scale_func(1/qx, q_continuous)

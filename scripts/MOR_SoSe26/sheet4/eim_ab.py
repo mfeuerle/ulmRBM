@@ -1,19 +1,7 @@
 import numpy as np
-from scipy.sparse.linalg import spsolve
-import pyvista as pv
-import time
 import matplotlib.pyplot as plt
-from functools import partial
-from itertools import product
 
-from mpi4py import MPI
-
-from dolfinx import mesh, fem
-import ufl
-
-from ulmRBM.affine import empirical_interpolation, AffineFunction, AffineObject, AffineLinear
-from ulmRBM.fenicsx import utils, interpolate_function_eim
-from ulmRBM.fenicsx.problems import thermal_block, assemble_system, assemble_vector
+from ulmRBM.affine import empirical_interpolation
 
 np.set_printoptions(edgeitems=30, linewidth=100000, precision=2)
 

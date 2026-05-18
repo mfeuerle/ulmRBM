@@ -27,7 +27,7 @@ fom_g  = GalerkinFOM(B, f, U_H10, solver=solver)
 continuity_exact = lambda mu: np.max(mu)
 coercivity_exact = lambda mu: np.min(mu)
 
-mus = [np.random.uniform(*mu_range, size=nblocks)+1e-5 for _ in range(500)]
+mus = [np.random.uniform(*mu_range, size=nblocks) for _ in range(500)]
 
 
 print(f"Calculating constants for {len(mus)} random parameters...")

@@ -276,11 +276,11 @@ class _TestResidualCalculator:
     used_fom = None  # To be defined in subclasses
     
     @staticmethod
-    def exact_residual_norm2(fom, basis, mu, u):
-        """Compute exact residual norm2 for comparison."""
+    def exact_residual_dual_norm(fom, basis, mu, u):        
+        """Compute exact residual dual norm for comparison."""
         r = fom.f(mu) - fom.B(mu) @ (basis @ u)
-        return fom.V.dual.inner(mu, r)
-    
+        return fom.V.dual.norm(mu, r)
+
     def test_set_with_fom(self, residual_calculator, used_fom):
         residual_calculator.set(used_fom)
         assert residual_calculator.fom is used_fom
@@ -293,26 +293,26 @@ class _TestResidualCalculator:
     def test_set_with_rom(self):
         raise NotImplementedError("Test for set() with ROM not implemented yet.")
         
-    def test_set_then_norm2(self, residual_calculator, used_fom, simple_basis_U):
+    def test_set_then_dual_norm(self, residual_calculator, used_fom, simple_basis_U):
         residual_calculator.set(used_fom, simple_basis_U)
         
         for mu in test_parameters:
             for u in [np.array([0.1, 0.2]), np.array([0.5, 0.5])]:
-                result = residual_calculator.norm2(mu, u)
-                exact = self.exact_residual_norm2(used_fom, simple_basis_U, mu, u)
+                result = residual_calculator.dual_norm(mu, u)
+                exact = self.exact_residual_dual_norm(used_fom, simple_basis_U, mu, u)
                 assert np.isclose(result, exact)
 
-    def test_add_then_norm2(self, residual_calculator, used_fom, simple_basis_U):
+    def test_add_then_dual_norm(self, residual_calculator, used_fom, simple_basis_U):
         residual_calculator.set(used_fom, simple_basis_U[:, :1])  # First basis vector
         residual_calculator.add_basis(simple_basis_U[:, 1:])       # remaining basis vector
         
         for mu in test_parameters:
             for u in [np.array([0.1, 0.2]), np.array([0.5, 0.5])]:
-                result = residual_calculator.norm2(mu, u)
-                exact = self.exact_residual_norm2(used_fom, simple_basis_U, mu, u)
+                result = residual_calculator.dual_norm(mu, u)
+                exact = self.exact_residual_dual_norm(used_fom, simple_basis_U, mu, u)
                 assert np.isclose(result, exact)
-    
-    def test_rotate_then_norm2(self, residual_calculator, used_fom, simple_basis_U):
+
+    def test_rotate_then_dual_norm(self, residual_calculator, used_fom, simple_basis_U):
         residual_calculator.set(used_fom, simple_basis_U)
         rotation = np.array([[0.0, 1.0], [1.0, 0.0]])  # Swap columns
         residual_calculator.rotate_basis(rotation)
@@ -320,8 +320,8 @@ class _TestResidualCalculator:
         
         for mu in test_parameters:
             for u in [np.array([0.1, 0.2]), np.array([0.5, 0.5])]:
-                result = residual_calculator.norm2(mu, u)
-                exact = self.exact_residual_norm2(used_fom, rotated_basis, mu, u)
+                result = residual_calculator.dual_norm(mu, u)
+                exact = self.exact_residual_dual_norm(used_fom, rotated_basis, mu, u)
                 assert np.isclose(result, exact)
 
     def test_fom_property_error_handling(self, residual_calculator):

@@ -181,7 +181,7 @@ class FOM(Generic[Mu]):
         .. math::
             \beta(\mu) = \inf_{u \in U} \sup_{v\in V} \frac{| \langle B(\mu) u, v \rangle_{V'\times V} |}{\|u\|_U \|v\|_V}
         
-        The constant is computed via eigenvalue problems unless an explicit function
+        The constant is computed via eigenvalue problems using :func:`~scipy.sparse.linalg.eigsh` unless an explicit function
         was provided during initialization.
         
         Args:
@@ -224,8 +224,8 @@ class FOM(Generic[Mu]):
         .. math::
             \gamma(\mu) = \sup_{u \in U} \sup_{v\in V} \frac{| \langle B(\mu) u, v \rangle_{V'\times V} |}{\|u\|_U \|v\|_V}
         
-        The constant is equivalent to the operator norm of :math:`B(\mu)` and is computed
-        via eigenvalue problems unless an explicit function was provided during initialization.
+        The constant is equivalent to the operator norm of :math:`\|B(\mu)\|_{L(U,V')}` and is computed
+        via eigenvalue problems using :func:`~scipy.sparse.linalg.eigsh` unless an explicit function was provided during initialization.
         
         Args:
             mu:
