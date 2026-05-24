@@ -6,7 +6,7 @@ Functions
 .. autosummary::
     :toctree: generated/
     
-    greedy_algorithm
+    greedy_rbm
 
 """
 
@@ -18,21 +18,19 @@ import time
 
 from ulmRBM.core import Mu, Vector
 from ulmRBM.products import InnerProduct
-from ulmRBM.rom import ROM, Trial2TestROM
+from ulmRBM.rom import ROM
 
 __all__= [
-    'greedy_algorithm',
+    'greedy_rbm',
 ]
 
-def greedy_algorithm(
-    rom: Trial2TestROM[Mu],
+def greedy_rbm(
+    rom: ROM[Mu],
     mu_train: list[Mu],
     Nmax: int,
     tol: float = 1e-5,
     strong: bool | list[Vector] = False,
-    ortho: bool | InnerProduct[Mu] | tuple[bool | InnerProduct[Mu], int] = (True,40),
-    update_stability: bool = True,
-    update_continuity: bool = True,
+    ortho: bool | InnerProduct[Mu] | tuple[bool | InnerProduct[Mu], int] = True,
     callback: Callable[[ROM[Mu], Mu, Vector], None] | None = None
 ) -> tuple[int, np.ndarray, np.ndarray]:
     """
@@ -50,11 +48,7 @@ def greedy_algorithm(
         strong: 
             If True, use true FOM solutions for error computation (strong greedy). If a list, use these FOM solutions directly for a strong greedy. Default is False (use error estimator and thus weak greedy).
         ortho: 
-            If True, orthonormalize the basis after each enrichment. If an InnerProduct, use it for orthonormalization. Default is True. For a tuple, a full orthonormalization is performed every specified number of enrichments, e.g. ``(True, 20)`` performs a orthonormalization in every iteration, and a full orthonormalization if ``rom.dim[1] % 20 == 0``, see :meth:`ROM.orthonormalize`.
-        update_stability: 
-            If True, update the stability constant estimator after each enrichment. Default is True.
-        update_continuity: 
-            If True, update the continuity constant estimator after each enrichment. Default is True.
+            If True, orthonormalize the basis after each enrichment. If an InnerProduct, use it for orthonormalization. Default is True.
         callback: 
             Optional callback called after each enrichment with signature ``(rom, mu, u_mu)``, where rom is the reduced model after enrichment, mu the parameter value of the last enrichment, and u_mu the corresponding FOM solution.
 
@@ -70,15 +64,11 @@ def greedy_algorithm(
     
     fom = rom.fom
     mu_train = copy(mu_train)
+    original_idx = np.arange(1,len(mu_train))
     selected_mu = []
     selected_mu_idx = []
     err_decay = []
     Nstart = rom.dim[1]
-    
-    try:
-        ortho, ortho_interval = ortho
-    except TypeError:
-        ortho_interval = np.inf
         
     if isinstance(ortho, bool):
         if ortho: U = None
@@ -118,13 +108,6 @@ def greedy_algorithm(
         print(f"{time.time() - start_time:6.1f}s:\t adding basis to rom...")
         rom.add_basis(u_mu)
         
-        if update_stability:
-            print(f"{time.time() - start_time:6.1f}s:\t updating stability estimator (idx={mu_idx})...")
-            rom.estimate_fom_stability.update(mu)
-        if update_continuity: 
-            print(f"{time.time() - start_time:6.1f}s:\t updating continuity estimator (idx={mu_idx})...")
-            rom.estimate_fom_continuity.update(mu)
-        
         selected_mu.append(mu)
         selected_mu_idx.append(mu_idx)
         err = np.nan
@@ -145,7 +128,7 @@ def greedy_algorithm(
         if strong:
             err = np.array([rom.error(mu, u_fom=u_mu) for mu, u_mu in zip(mu_train, u_fom)])
         else:
-            err = np.array([rom.estimate_error(mu) for mu in mu_train])
+            err = np.array([rom.error_bound(mu) for mu in mu_train])
         
         idx = np.argmax(err)
         err = err[idx]
@@ -153,7 +136,7 @@ def greedy_algorithm(
         
         # Calculate original index
         mu = mu_train[idx]
-        mu_idx = idx + sum(selected_mu_idx <= idx)
+        mu_idx = original_idx[idx]
         
         print(f"{time.time() - start_time:6.1f}s:\t Max error: {err:.2e} at idx={mu_idx}")
         
@@ -164,23 +147,14 @@ def greedy_algorithm(
         
         print(f"{time.time() - start_time:6.1f}s:\t computing new basis (idx={mu_idx}, N={rom.dim[1]}) ...")
         mu = mu_train.pop(idx)
+        original_idx = np.delete(original_idx, idx)
         u_mu = u_fom.pop(idx) if strong else fom.solve(mu)
         print(f"{time.time() - start_time:6.1f}s:\t adding basis to rom...")
         rom.add_basis(u_mu)
         
-        if update_stability:
-            print(f"{time.time() - start_time:6.1f}s:\t updating stability estimator (idx={mu_idx})...")
-            rom.estimate_fom_stability.update(mu)
-        if update_continuity: 
-            print(f"{time.time() - start_time:6.1f}s:\t updating continuity estimator (idx={mu_idx})...")
-            rom.estimate_fom_continuity.update(mu)
         if ortho:
-            if rom.dim[1] % ortho_interval == 0:
-                print(f"{time.time() - start_time:6.1f}s:\t orthonormalizing basis (full)...")
-                rom.orthonormalize(U=U, full=True)
-            else:
-                print(f"{time.time() - start_time:6.1f}s:\t orthonormalizing basis...")
-                rom.orthonormalize(U=U, full=False)
+            print(f"{time.time() - start_time:6.1f}s:\t orthonormalizing basis...")
+            rom.orthonormalize(U=U)
         
         selected_mu.append(mu)
         selected_mu_idx.append(mu_idx)
@@ -191,9 +165,12 @@ def greedy_algorithm(
             callback(rom, mu, u_mu)
     
     codes= {0: "tolerance reached", 1: "Nmax reached", 2: "training set exhausted"}
-    print(f"{time.time() - start_time:6.1f}s: Greedy algorithm completed: {codes[flag]} (final_error={err:.2e}, final_N={rom.dim[1]})")
     
-    if flag:
-        warn(f"Greedy algorithm stopped without reaching tolerance ({codes[flag]}). Current tolerance: {err:.2e}, target tolerance: {tol:.2e}.", UserWarning)
+    # if flag:
+    #     warn(f"Greedy algorithm stopped without reaching tolerance ({codes[flag]}). Current tolerance: {err:.2e}, target tolerance: {tol:.2e}.", UserWarning)
         
+    print(f"{time.time() - start_time:6.1f}s: Greedy algorithm completed: {codes[flag]} (final_error={err:.2e}, final_N={rom.dim[1]})\n")
+    
+    rom.assemble()
+    
     return flag, np.array(err_decay), np.array(selected_mu_idx, dtype=int)

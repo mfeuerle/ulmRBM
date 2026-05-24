@@ -7,88 +7,63 @@ Reduced-Order Models
     :toctree: generated/
     
     ROM
-    GeneralROM
-    Trial2TestROM
     GalerkinROM
 
 Constant Estimators
 -------------------
 
-Options
-~~~~~~~
+Interface
+~~~~~~~~~
 .. autosummary::
     :toctree: generated/
      
-    StabilityOptions
-    ContinuityOptions
-     
-Abstract Base Classes
-~~~~~~~~~~~~~~~~~~~~~
-.. autosummary::
-    :toctree: generated/
-    
-    ConstantsEstimator
+    ConstantEstimator
     StabilityEstimator
     ContinuityEstimator
+    EfficientConstantEstimator
     
-Stability Estimators
-~~~~~~~~~~~~~~~~~~~~
+Algorithms
+~~~~~~~~~~
+Setting up any `EfficientConstantEstimator`
+
 .. autosummary::
     :toctree: generated/
     
-    StabilityExact
-    StabilityMinTheta
-    
-Continuity Estimators
-~~~~~~~~~~~~~~~~~~~~~
+    greedy_constant_estimator
+
+     
+Exact Estimators
+~~~~~~~~~~~~~~~~
+In general not online-efficient but usefull if the exact stability or continuity constant of the `FOM` can be evaluated fast via custom functions (e.g. if the constants are known analytically).
+
 .. autosummary::
     :toctree: generated/
     
-    ContinuityExact
-    ContinuityMaxTheta
+    ExactStability
+    ExactContinuity
     
-    
-Residual Calculators
---------------------
+Min/Max-Theta Estimators
+~~~~~~~~~~~~~~~~~~~~~~~~
+Online-efficient estimatators, under additional assumptions on the system matrices.
+
 .. autosummary::
     :toctree: generated/
     
-    ResidualOptions
-    ResidualCalculator
-    DirectResidual
-    AffineResidual
-"""
-
-"""
-Adding some specific FEniCSx related functionality.
-
-Submodules
-----------
-.. autosummary::
-   :toctree: generated/
-   
-   utils
-   problems
-   norms
-
-Classes
--------
-.. autosummary::
-   :toctree: generated/
-   
-    AffineDirichletBC
-    FEniCSxSpaceWithDirichletBCs
+    ThetaStability
+    ThetaContinuity
     
-Functions
-----------------
+Successive Constraint Method (SCM)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Online-efficient estimatators.
+
 .. autosummary::
-   :toctree: generated/
-   
-    free_dofs
+    :toctree: generated/
+    
+    SCMStability
+    SCMContinuity
 """
 
 from ._constants import *
-from ._residual import *
 from ._rom import *
 
 _submodules = [

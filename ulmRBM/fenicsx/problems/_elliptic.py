@@ -19,7 +19,7 @@ __all__ = [
 # def simple_elliptic_operator(dim: int) -> tuple[AffineObject, AffineObject, AffineObject]:
 
 
-def simple_elliptic(n: list[int]) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+def simple_elliptic(nx, ny) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Parametric elliptic problem on the unit square.
 
     The model uses `weak_problem` with
@@ -41,14 +41,8 @@ def simple_elliptic(n: list[int]) -> tuple[AffineObject[Mu, ufl.Form], AffineObj
     See `weak_problem` for details on the return values.
     """
     
-    if len(n) == 1:
-        msh = mesh.create_unit_interval(MPI.COMM_WORLD, *n)
-    elif len(n) == 2:
-        msh = mesh.create_unit_square(MPI.COMM_WORLD, *n)
-    elif len(n) == 3:
-        msh = mesh.create_unit_cube(MPI.COMM_WORLD, *n)
-    else:
-        raise ValueError("Only 1D, 2D and 3D problems are supported.")
+
+    msh = mesh.create_unit_square(MPI.COMM_WORLD, nx, ny)
     
     gdim = msh.geometry.dim
     
@@ -58,11 +52,12 @@ def simple_elliptic(n: list[int]) -> tuple[AffineObject[Mu, ufl.Form], AffineObj
     g = [AffineObject([0.0], [0.0])]
     h = []
     
-    A = AffineObject([lambda mu: mu], [lambda x: -np.eye(gdim).reshape(-1,1)])
+    A = AffineObject([1.0], [np.diag([1.0] + (gdim-1)*[0.0])])  # u_xx
+    A += [(lambda mu: mu,    np.diag([0.0] + (gdim-1)*[1.0]))]  # + mu * u_yy
     b = AffineObject([0.0], [np.zeros(gdim)])
     c = AffineObject([0.0], [0.0])
     
-    return weak_problem(msh, (A,b,c), (f,g,h), dbdry)
+    return weak_problem(msh, (-A,b,c), (f,g,h), dbdry)
 
 
 def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:

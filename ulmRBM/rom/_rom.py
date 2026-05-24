@@ -3,26 +3,22 @@ from __future__ import annotations
 
 __all__ = [
     'ROM',
-    'GeneralROM',
-    'Trial2TestROM',
     'GalerkinROM',
 ]
 
 from collections.abc import Callable
 
 import numpy as np
+from warnings import warn
 
-from ulmRBM.core import Mu, Matrix, Vector, NO_MU
+from ulmRBM.core import Mu, Matrix, Vector
 from ulmRBM.solver import Solver, DirectSolver
 from ulmRBM.fom import FOM, GalerkinFOM
 from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 from ulmRBM.affine import AffineLinear, wrap_affinelinear
 
-from ._constants import StabilityEstimator, ContinuityEstimator, StabilityOptions, ContinuityOptions
-from ._residual import ResidualCalculator, ResidualOptions
-
-# maybe add a global flag to warn if any computations inside the rom use full-order dimensions
-
+from ._constants import StabilityEstimator, ContinuityEstimator, ExactContinuity
+from .__residual import ResidualNormEvaluator, AffineResidualNormEvaluator, FullResidualNormEvaluator
 
 class ROM(FOM[Mu]):
     r"""
@@ -40,66 +36,73 @@ class ROM(FOM[Mu]):
     .. math::
         s_N(\mu) = l_N(\mu) u_N,
     
-    where :math:`B_N(\mu) = V_N^T B(\mu) U_N`, :math:`f_N(\mu) = V_N^T f(\mu)`
+    where :math:`B_N(\mu) = V_N^T(\mu) B(\mu) U_N`, :math:`f_N(\mu) = V_N^T(\mu) f(\mu)`
     and :math:`l_N(\mu) = l(\mu) U_N`,
     with :math:`U_N \in \mathbb{R}^{n \times N}` the reduced trial basis and
-    :math:`V_N \in \mathbb{R}^{m \times M}` the reduced test basis.
+    :math:`V_N(\mu) \in \mathbb{R}^{m \times M}` the reduced test basis with affine parameter dependence.
     Then, :math:`u_N \in \mathbb{R}^N` is the reduced solution vector and :math:`U_N u_N \in \mathbb{R}^n`
-    the corresponding approximation in the full-order solution, while :math:`s_N(\mu)\in\mathbb{R}^p` 
+    the corresponding approximation of the full-order solution, while :math:`s_N(\mu)\in\mathbb{R}^p` 
     are the output(s) of interest of the reduced solution. 
-    """
     
-    #Extension to affine trial space should be easy be extending the functionallity of ResidualCalculator and reusing existing code for the test space.
+    The reduced test space basis :math:`V_N(\mu)` is defined implicitly by a trail-to-test operator :math:`T(\mu)`, i.e. :math:`V_N(\mu) = T(\mu) U_N`. If the test space inner product is parameter independent, the default trial-to-test operator is given by the supremizing operator of the full-order model which will always lead to a stable reduced-order model.
+    """
     
     fom: FOM[Mu]
     """Underlying full-order model."""
-    U_basis: AffineLinear[Mu, Vector] | None
+    U_basis: Vector | None
     """:math:`(n,N)` trial space basis matrix, where :math:`N` is the dimension of the reduced trial space."""
     V_basis: AffineLinear[Mu, Vector] | None
     """:math:`(m,M)` test space basis matrix, where :math:`M` is the dimension of the reduced test space."""
-    estimate_fom_stability: StabilityEstimator[Mu]
-    r"""Estimator :math:`\beta_{\text{LB}}(\mu)` for the FOM stability constant, required for error estimation."""
-    estimate_fom_continuity: ContinuityEstimator[Mu]
-    r"""Estimator :math:`\gamma_{\text{UB}}(\mu)` for the FOM continuity constant."""
-    residual: ResidualCalculator[Mu]
-    r"""Calculator for the dual norm of the residual, required for error estimation."""
     
-    _U_basis: AffineLinear[Mu, Vector] | None = None
+    _U_basis: Vector | None = None
     _V_basis: AffineLinear[Mu, Vector] | None = None
+    _B: AffineLinear[Mu, Matrix] | None = None
+    _f: AffineLinear[Mu, Vector] | None = None
+    _l: AffineLinear[Mu, Matrix] | None = None
+    
+    _fom_stability_estimator: StabilityEstimator[Mu]
+    r"""Estimator :math:`\beta_{\text{LB}}(\mu)` for the FOM stability constant, required for error estimation."""
+    _fom_continuity_estimator: ContinuityEstimator[Mu]
+    r"""Estimator :math:`\gamma_{\text{UB}}(\mu)` for the FOM continuity constant."""
+    _residual_evaluator: ResidualNormEvaluator[Mu]
+    r"""Evaluator for the dual norm of the residual, required for error estimation."""
+    
+    _trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] | None = None
+    r"""Internal storage if a custom trial2test function is provided."""
     
     _need_assemble: bool
     r"""Flag to indicate whether the reduced system matrices and vectors need to be reassembled."""
     
     @property
     def B(self) -> AffineLinear[Mu, Matrix]:
-        if self._need_assemble: self._assemble_rom()
+        self.assemble()
         return self._B
     @B.setter
     def B(self, value: AffineLinear[Mu, Matrix]):
         self._B = value
         
     @property
-    def f(self) -> AffineLinear[Mu, Matrix]:
-        if self._need_assemble: self._assemble_rom()
+    def f(self) -> AffineLinear[Mu, Vector]:
+        self.assemble()
         return self._f
     @f.setter
-    def f(self, value: AffineLinear[Mu, Matrix]):
+    def f(self, value: AffineLinear[Mu, Vector]):
         self._f = value
         
     @property
     def l(self) -> AffineLinear[Mu, Matrix] | None:
-        if self._need_assemble: self._assemble_rom()
+        self.assemble()
         return self._l
     @l.setter
     def l(self, value: AffineLinear[Mu, Matrix] | None):
         self._l = value
 
     @property
-    def U_basis(self) -> AffineLinear[Mu, Vector]:
+    def U_basis(self) -> Vector:
         return self._U_basis
     @U_basis.setter
-    def U_basis(self, value: AffineLinear[Mu, Vector]):
-        self._U_basis = wrap_affinelinear(value)
+    def U_basis(self, value: Vector):
+        self._U_basis = value
         self._need_assemble = True
         self.U = self.fom.U.restrict(self._U_basis)
         
@@ -113,33 +116,6 @@ class ROM(FOM[Mu]):
         self.V = self.fom.V.restrict(self._V_basis)
         
     @property
-    def estimate_fom_continuity(self) -> ContinuityEstimator[Mu]:
-        return self._estimate_fom_continuity
-    @estimate_fom_continuity.setter
-    def estimate_fom_continuity(self, estimator: ContinuityEstimator[Mu] | None):
-        if estimator is not None:
-            estimator.fom = self.fom
-        self._estimate_fom_continuity = estimator
-        
-    @property
-    def estimate_fom_stability(self) -> StabilityEstimator[Mu]:
-        return self._estimate_fom_stability
-    @estimate_fom_stability.setter
-    def estimate_fom_stability(self, estimator: StabilityEstimator[Mu] | None):
-        if estimator is not None:
-            estimator.fom = self.fom
-        self._estimate_fom_stability = estimator
-        
-    @property
-    def residual(self) -> ResidualCalculator[Mu]:
-        return self._residual
-    @residual.setter
-    def residual(self, residual: ResidualCalculator[Mu] | None):
-        if residual is not None:
-            residual.set(self)
-        self._residual = residual
-        
-    @property
     def dim(self):
         return (0 if self.U_basis is None else self.U_basis.shape[1],
                 0 if self.V_basis is None else self.V_basis.shape[1],
@@ -148,104 +124,99 @@ class ROM(FOM[Mu]):
     
     def __init__(self, 
                  fom: FOM[Mu],
+                 stability: StabilityEstimator[Mu],
+                 continuity: ContinuityEstimator[Mu] = None,
                  U_basis: AffineLinear[Mu, Vector] | Vector = None,
-                 V_basis: AffineLinear[Mu, Vector] | Vector = None,
-                 stability: StabilityEstimator[Mu] | StabilityOptions = None,
-                 continuity: ContinuityEstimator[Mu] | ContinuityOptions = None,
-                 residual: ResidualCalculator[Mu] | ResidualOptions = None,
-                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver()):
+                 trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
+                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver(),
+                 residual: None | str = None):
         r"""
         Args:
             fom:
                 Full-order model to reduce.
-            U_basis:
-                Initial trial space basis :math:`(n, N)`. If ``None``, starts with empty basis.
-            V_basis:
-                Initial test space basis :math:`(m, M)`. If ``None``, starts with empty basis.
             stability:
-                Estimator for the FOM stability constant. Required for online-efficient residual-based error estimation, see :meth:`estimate_error`. If ``None``, defaults to :class:`StabilityMinTheta`.
+                Estimator for the FOM stability constant. Required for online-efficient residual-based error bounds, see `error_bound` and `error_bounds` (expept for ``alb``).
             continuity:
-                Estimator for the FOM continuity constant. If ``None``, defaults to :class:`ContinuityExact`.
-            residual:
-                Calculator for the dual norm of the residual. Required for residual-based error estimation, see :meth:`estimate_error`. If ``None``, defaults to :class:`AffineResidual` if the FOM's test space inner product is parameter-independent, otherwise to :class:`DirectResidual`.
+                Estimator for the FOM continuity constant. Not required for `error_bound`, but for all other online-efficient error bounds, see `error_bounds` (exept for ``aub``). Provide an online-efficient implementation if you want to use any of thes error bounds in an online efficient way. If ``None``, defaults to `ExactContinuity`.
+            U_basis:
+                Initial trial space basis :math:`U_N` of shape  ``(n, N)``. If ``None``, starts with an empty basis.
+            trial2test:
+                Trial-to-Test operator :math:`T(\mu)` to define the test space basis via :math:`V_N(\mu) = T(\mu) U_N`. If ``None``, defaults to the supremizing operator of the full-order model if the test space inner product is parameter independent, otherwise otherwise the user has to provide a custom operator.
             solver:
                 Solver for the reduced linear system. Defaults to :class:`DirectSolver`.
+            residual: 'affine' or 'full' or None
+                Method to evaluate the residual. Required for online-efficient residual-based error bounds, see `error_bound` and `error_bounds`. The option 'affine' is only applicable if the test space inner product is parameter independent. This method exploits the affine structure of the problem is thus online-efficent. The option 'full' is a fall back that delegates all calculations to the full-order model and is thus not online-efficient. If ``None``, defaults to 'affine' if the FOM test space inner product is parameter independent and to 'full' otherwise.
         """
         
-        self.fom = fom
-        
-        if stability is None: stability = StabilityOptions.MIN_THETA
-        if not isinstance(stability, StabilityEstimator):
-            stability = StabilityOptions(stability).get()
-        self.estimate_fom_stability = stability
-                
-        if continuity is None: continuity = ContinuityOptions.EXACT
-        if not isinstance(continuity, ContinuityEstimator):
-            continuity = ContinuityOptions(continuity).get()
-        self.estimate_fom_continuity = continuity
+        if continuity is None: continuity = ExactContinuity(fom)
+        if trial2test is None: trial2test = fom.supremizer
         
         if residual is None:
             if fom.V.is_parametric:
-                residual = ResidualOptions.DIRECT
-                from warnings import warn
-                warn("FOM has parameter-dependent test space inner product, using 'DirectResidual' for residual computation as the residula is not affine. Thus, error estimation IS NOT online-efficient.")
+                warn("An affine decomposition of the residual is not possible for FOMs with parameter-dependent test space inner product. Thus, the error bounds can not be evaluated online efficient.", UserWarning)
+                residual = 'full'
             else:
-                residual = ResidualOptions.AFFINE
-        if not isinstance(residual, ResidualCalculator):
-            residual = ResidualOptions(residual).get()
-        self.residual = residual
+                residual = 'affine'
         
-        self.solver = solver
+        if stability.fom is not fom:
+            raise ValueError("The fom of the stability estimator does not match the fom of the reduced order model.")
+        if continuity.fom is not fom:
+            raise ValueError("The fom of the continuity estimator does not match the fom of the reduced order model.")
         
-        if U_basis is not None: self._add_basis_U(U_basis)
-        if V_basis is not None: self._add_basis_V(V_basis)
-    
+        self.fom = fom
+        self._fom_stability_estimator  = stability
+        self._fom_continuity_estimator = continuity
+        self._solver = solver
+        self._trial2test = trial2test
+        if U_basis is not None: self.add_basis(U_basis)
+            
+        if residual == 'affine':
+            self._residual_evaluator = AffineResidualNormEvaluator(self)
+        elif residual == 'full':
+            self._residual_evaluator = FullResidualNormEvaluator(self)
+        else:
+            raise ValueError("Invalid option for 'residual'. Must be either 'affine' or 'full' or None.")
         
-    def _assemble_rom(self):
-        r"""Assemble the reduced-order model system matrices and vectors based on the current trial and test bases."""
-        self.B = None
-        self.f = None
-        self.l = None
-        if self.V_basis is not None:
-            self.f = self.V_basis.T @ self.fom.f
-            if self.U_basis is not None:
-                self.B = self.V_basis.T @ self.fom.B @ self.U_basis
-        if self.U_basis is not None and self.fom.l is not None:
-            self.l = self.fom.l @ self.U_basis
-        self._need_assemble = False
-    
-    def _add_basis_U(self, basis: AffineLinear[Mu, Vector] | Vector):
-        r"""Add new basis vectors to the trial space basis.
         
-        Residual calculator is updated accordingly.
+    def assemble(self):
+        r"""Assemble the reduced-order model system matrices and vectors based on the current trial and test bases.
+        
+        This method is in most cases called internally anyways. But if you want to ensure, that the reduced-order model is ready for the online stage, you mmight call this method.
+        """
+        if self._need_assemble:
+            self.B = None
+            self.f = None
+            self.l = None
+            if self.V_basis is not None:
+                self.f = self.V_basis.T @ self.fom.f
+                if self.U_basis is not None:
+                    self.B = self.V_basis.T @ self.fom.B @ self.U_basis
+            if self.U_basis is not None and self.fom.l is not None:
+                self.l = self.fom.l @ self.U_basis
+            self._need_assemble = False
+        
+        
+    def add_basis(self, basis: Vector):
+        r"""Add new trial basis vectors and update the test basis via trial-2-test relation.
         
         Args:
             basis:
-                New trial basis vectors :math:`(n, k)` to append.
+                New trial basis vectors :math:`(n, k)` to append.        
         """
-        basis = wrap_affinelinear(basis)
-        if len(basis.shape) == 1:
-            basis = basis.apply2data(lambda dq: dq.reshape(-1,1))
+        self._add_basis_U(basis)
+        self._add_basis_V(self._trial2test(basis))
+    
+    def _add_basis_U(self, basis: Vector):
+        if basis.ndim == 1: basis = basis.reshape(-1,1)
         if basis.shape[0] != self.fom.dim[0]:
             raise ValueError("Basis vector has incompatible dimension.")
         if self.U_basis is None:
-            U_basis = basis
+            self.U_basis = basis
         else:
-            if len(self.U_basis) != len(basis):
-                raise ValueError("Cannot add basis with different number of affine terms.")
-            U_basis = AffineLinear()
-            for ((theta, U_old), U_new) in zip(self.U_basis, basis.data):
-                U_basis += [(theta, np.hstack([U_old, U_new]))]
-        self.U_basis = U_basis
-        self.residual.add_basis(basis)
+            self.U_basis = np.hstack([self.U_basis, basis])
+        self._residual_evaluator.add_basis(basis)
         
     def _add_basis_V(self, basis: AffineLinear[Mu, Vector] | Vector):
-        r"""Add new basis vectors to the test space basis.
-        
-        Args:
-            basis:
-                New test basis vectors :math:`(m, k)` to append.
-        """
         basis = wrap_affinelinear(basis)
         if len(basis.shape) == 1: 
             basis = basis.apply2data(lambda dq: dq.reshape(-1,1))
@@ -261,8 +232,8 @@ class ROM(FOM[Mu]):
                 V_basis += [(theta, np.hstack([V_old, V_new]))]
         self.V_basis = V_basis
         
-        
-    def _orthonormalize_U(self, full: bool, U: InnerProduct[Mu] | Matrix | None) -> np.ndarray:
+    
+    def orthonormalize(self, U: InnerProduct[Mu] | Matrix | None = None):
         """
         Orthonormalize the trial space basis with respect to a specified inner product.
         
@@ -270,73 +241,33 @@ class ROM(FOM[Mu]):
         inner product. This improves numerical stability and ensures well-conditioned
         reduced system matrices.
         
-        This is only possible if the trial basis is parameter-independent.
-        
         Args:
-            full:
-                If ``True``, the residual calculation is performed from scratch and the option is passed to `ulmRBM.products.orthonormalize`. This is more stable but expensive. 
-                If ``False``, update existing residual data incrementally. This is faster but might accumulate errors over time.
             U:
                 Parameter-independent inner product for trial space orthonormalization.
                 If ``None`` and :attr:`fom.U` is parameter-independent, uses :attr:`fom.U`.
                 Otherwise uses Euclidean inner product.
         """
-        if self.U_basis.is_parametric:
-            raise ValueError("Trial basis is parameter-dependent, cannot orthonormalize.")
+        U = self._orthonormalize_U(U)
+        self.V_basis = self.V_basis @ U
         
+    def _orthonormalize_U(self, U: InnerProduct[Mu] | Matrix | None) -> np.ndarray: 
         if U is None: 
             if self.fom.U.is_parametric:
                 U = EuclideanInnerProduct(self.fom.U.shape[0])
             else:
                 U = self.fom.U
                 
-        self.U_basis, Q = orthonormalize(self.U_basis(NO_MU), U, full)
-        
-        if full:
-            self.residual.set_basis(self.U_basis)
-        else:
-            self.residual.rotate_basis(Q)
-            
+        self.U_basis, Q = orthonormalize(self.U_basis, U,)
+        self._residual_evaluator.rotate_basis(Q)
         return Q
+        
     
-    def _orthonormalize_V(self, full: bool, V: InnerProduct[Mu] | Matrix | None) -> np.ndarray:
-        """
-        Orthonormalize the test space basis with respect to a specified inner product.
-        
-        Performs orthonormalization using a parameter-independent
-        inner product. This improves numerical stability and ensures well-conditioned
-        reduced system matrices.
-        
-        This is only possible if the test basis is parameter-independent.
-        
-        Args:
-            full:
-                See `ulmRBM.products.orthonormalize`.
-            V:
-                Parameter-independent inner product for test space orthonormalization.
-                If ``None`` and :attr:`fom.V` is parameter-independent, uses :attr:`fom.V`.
-                Otherwise uses Euclidean inner product.
-        """
-        if self.V_basis.is_parametric:
-            raise ValueError("Test basis is parameter-dependent, cannot orthonormalize.")
-        
-        if V is None:
-            if self.fom.V.is_parametric:
-                V = EuclideanInnerProduct(self.fom.V.shape[0])
-            else:
-                V = self.fom.V
-                          
-        self.V_basis, Q = orthonormalize(self.V_basis(NO_MU), V, full)
-        
-        return Q
-    
-    
-    def error(self, mu: Mu, u: Vector = None, u_fom: Vector = None) -> float:
+    def error(self, mu: Mu, u: Vector = None, u_fom: Vector = None, abs: bool = True, rel: bool = False) -> float:
         r"""
         Compute the true error between reduced and full-order solutions.
         
-        Computes :math:`\|u(\mu) - U_N(\mu) u_N(\mu)\|_U` where :math:`u(\mu)` is the
-        full-order solution and :math:`U_N(\mu) u_N(\mu)` is the reconstructed reduced solution.
+        Computes :math:`\|u(\mu) - U_N u_N(\mu)\|_U` where :math:`u(\mu)` is the
+        full-order solution and :math:`U_N u_N(\mu)` is the reconstructed reduced solution.
         
         Args:
             mu:
@@ -347,218 +278,139 @@ class ROM(FOM[Mu]):
                 Full-order solution vector :math:`(n,)`. If ``None``, computed via :meth:`fom.solve`.
         
         Returns:
-            True error :math:`\|u(\mu) - U_N(\mu) u_N(\mu)\|_U`.
+            True error :math:`\|u(\mu) - U_N u_N(\mu)\|_U`.
         """
-        if u_fom is None: u_fom = self.fom.solve(mu)
-        return self.fom.U.norm(mu, u_fom - self.reconstruct(mu, u))
+        if abs or rel:
+            if u_fom is None: u_fom = self.fom.solve(mu)
+            abs_err = self.fom.U.norm(mu, u_fom - self.reconstruct(mu, u))
+            if rel:
+                rel_err = abs_err / self.fom.U.norm(mu, u_fom)
+                if abs:
+                    return abs_err, rel_err
+                else:
+                    return rel_err
+            else:
+                return abs_err 
     
-    def estimate_error(self, mu: Mu, u: Vector = None) -> float:
-        r"""
-        Estimate the error using residual-based a posteriori error bound.
+    def error_bound(self, mu: Mu, u: Vector = None) -> float:
+        r"""Guaranteed a-posteriori upper bound of the absolute error.
         
-        Computes the error bound:
+        Just a shorthand for ``error_bounds(mu, u, aub=True)['aub']``, as this is the most common error quantity to evaluate, see `error_bounds` for details.
+        """
+        return self.error_bounds(mu, u, aub=True)['aub']
+        
+    def error_bounds(self, mu: Mu, u: Vector = None, aub: bool = False, rub: bool = False, alb: bool = False, rlb: bool = False) -> dict:
+        r"""Guaranteed a-posteriori error bounds on the reduced solution.
+        
+        For :math:`\mu`, let :math:`u(\mu)` be the full-order solution, :math:`u_N(\mu)` the reduced solution and :math:`U_N u_N(\mu)` the reconstructed reduced solution. Further, let :math:`\beta_{\text{LB}}(\mu)` and :math:`\gamma_{\text{UB}}(\mu)` be lower and upper bounds for the stability and continuity constants of the full-order model, respectively, and :math:`r(\mu) = f(\mu) - B(\mu) U_N u_N(\mu)` the residual.
+        
+        Then, the following absolute error bounds are available:
         
         .. math::
-            \Delta_N(\mu) := \frac{\|f(\mu) - B(\mu) U_N u(\mu)\|_{V'}}{\beta_{\text{LB}}(\mu)}
+            \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{UB}}(\mu)} \leq \|u(\mu) - U_N u_N(\mu)\|_U \leq \frac{\|r(\mu)\|_{V'}}{\beta_{\text{LB}}(\mu)}
+            
+        And the following relative error bounds are available:
         
-        which provides an upper bound for :math:`\|u^*(\mu) - U_N u(\mu)\|_U`, where :math:`u^*(\mu)`
-        is the (unknown) full-order solution, :math:`u` is a reduced-order solution, and :math:`\beta_{\text{LB}}(\mu)` is a lower bound for the stability constant of the full-order model. If the stability and continuity constants of the FOM are
-        both equal to one (independent of :math:`\mu`), this bound is the true error.
+        .. math::
+            \frac{\|r(\mu)\|_{V'}}{\beta_{\text{LB}}(\mu)}\frac{\sigma_{\text{UB}}(\mu)}{\|f(\mu)\|_{V'}} \leq \frac{\|u(\mu) - U_N u_N(\mu)\|_U}{\|u(\mu)\|_U} \leq \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{UB}}(\mu)}\frac{\beta_{\text{LB}}(\mu)}{\|f(\mu)\|_{V'}}
         
         Args:
             mu:
                 Parameter value at which to estimate the error.
             u:
                 Reduced-order solution vector :math:`(N,)`. If ``None``, computed via :meth:`solve`.
+            aub:
+                If ``True``, compute the absolute upper bound.
+            rub:
+                If ``True``, compute the relative upper bound.
+            alb:
+                If ``True``, compute the absolute lower bound.
+            rlb:
+                If ``True``, compute the relative lower bound.
         
         Returns:
-            Error estimate :math:`\Delta_N(\mu)`.
+            Dictionary containing the computed error bounds. The keys are 'aub', 'rub', 'alb' and 'rlb' for each requested bound.
             
         .. note::
-            Due to taking a square root, the error estimator looses around 
+            Due to the square-root effect, the bounds are only accurate up to ``sqrt(eps)`` where ``eps`` is the machine precision. Thus, for smaller errors, the lower bounds might be wrong and the upper bounds might be overestimated.
         """
         if u is None: u = self.solve(mu)
-        return self.residual.dual_norm(mu, u) / self.estimate_fom_stability(mu)
+        r = self._residual_evaluator.dual_norm(mu, u)
+        
+        if aub or rlb or rub:
+            beta = self._fom_stability_estimator(mu)
+            
+        if alb or rlb or rub:
+            gamma = self._fom_continuity_estimator(mu)
+            
+        if rlb or rub:
+            f = self._residual_evaluator.dual_norm_rhs(mu)
+            
+        err = dict()
+        if aub: err['aub'] = r / beta
+        if alb: err['alb'] = r / gamma
+        if rub: err['rub'] = gamma/beta * r/f
+        if rlb: err['rlb'] = beta/gamma * r/f
+        return err
+
 
     def reconstruct(self, mu: Mu, u: Vector = None) -> Vector:
         r"""
         Reconstruct a full-order function from the reduced coefficients.
         
-        Computes :math:`U_N(\mu) u_N` to obtain the full-order representation.
+        Computes :math:`U_N u_N(\mu)` to obtain the full-order representation of the reduced solution :math:`u_N(\mu)`.
         
         Args:
             mu:
                 Parameter value at which to reconstruct the solution.
             u:
-                Optional reduced-order coefficients :math:`(N,)` or :math:`(N,k)`. If ``None``, the reduced solution at :math:`\mu` is computed via :meth:`solve` and used for reconstruction.
+                Optional reduced-order solution(s) :math:`(N,)` or :math:`(N,k)`. If ``None``, the reduced solution at :math:`\mu` is computed via :meth:`solve` and then reconstructed.
         
         Returns:
-            Reconstructed full-order function :math:`(n,)` or :math:`(n,k)`.
+            :math:`(n,)` or :math:`(n,k)` reduced-order approximation of the full-order solution .
         """
         if u is None: u = self.solve(mu)
-        return self.U_basis(mu) @ u
-    
-    
-    def stability(self, mu: Mu) -> float: return super().stability(mu)
-    stability.__doc__ = f"""
-        {FOM.stability.__doc__}
-        
-        .. note::
-            This computes the stability constant of the reduced-order model. To get an estimate
-            of the full-order model stability constant, use :attr:`estimate_fom_stability`.
-        """
-    
-    def continuity(self, mu: Mu) -> float: return super().continuity(mu)
-    continuity.__doc__ = f"""
-        {FOM.continuity.__doc__}
-        
-        .. note::
-            This computes the continuity constant of the reduced-order model. To get an estimate
-            of the full-order model continuity constant, use :attr:`estimate_fom_continuity`.
-        """
-        
-        
-class GeneralROM(ROM[Mu]):
-    r"""
-    General reduced-order model where trial and test space are controlled independently.
-    
-    See `ROM`
-    """
-        
-    add_basis_U = ROM._add_basis_U
-    add_basis_V = ROM._add_basis_V
-    orthonormalize_U = ROM._orthonormalize_U
-    orthonormalize_V = ROM._orthonormalize_V
+        return self.U_basis @ u
+
         
 
-class Trial2TestROM(ROM[Mu]):
-    r"""
-    Reduced-order Petrov-Galerkin model with explicit trial to test space relation.
-    
-    In this reduced-order model, the test space is given by :math:`V_N(\mu) := T(\mu) U_N(\mu)` where
-    :math:`U_N` is the reduced trial space and :math:`T(\mu) : U \to V` is a provided trial-to-test mapping function. Typically, :math:`T(\mu)` is the supremizing operator of the underlying full-order model, see `FOM.supremizer`.
-    For a documentation of the general ROM formulation, see `ROM`.
-    """
-    
-    _trial2test_fun: Callable[[Vector], AffineLinear[Mu, Vector]] | None = None
-    r"""Internal storage if a custom trial2test function is provided."""
-    
-    def __init__(self, 
-                 fom: FOM[Mu],
-                 U_basis: AffineLinear[Mu, Vector] | Vector = None,
-                 trial2test: Callable[[AffineLinear[Mu, Vector]], AffineLinear[Mu, Vector]] = None,
-                 stability: StabilityEstimator[Mu] | StabilityOptions = None,
-                 continuity: ContinuityEstimator[Mu] | ContinuityOptions = None,
-                 residual: ResidualCalculator[Mu] | ResidualOptions = None,
-                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver()):
-        r"""
-        Args:
-            fom:
-                Full-order model to reduce.
-            U_basis:
-                Initial trial space basis :math:`(n, N)`. If ``None``, starts with empty basis.
-            trial2test:
-                Function mapping trial basis vectors to test basis vectors, i.e. ``V_basis = trial2test(U_basis)``. If ``None``, and the test space inner product is parameter-independent, the supremizer of the full-order model is used, which will always yield a stable ROM.
-            stability:
-                Estimator for the FOM stability constant. Required for online-efficient residual-based error estimation. If ``None``, defaults to :class:`StabilityMinTheta`.
-            continuity:
-                Estimator for the FOM continuity constant. If ``None``, defaults to :class:`ContinuityMaxTheta`.
-            residual:
-                Calculator for the dual norm of the residual. Required for residual-based error estimation. If ``None``, defaults to :class:`AffineResidual` if the FOM's test space inner product is parameter-independent, otherwise to :class:`DirectResidual`.
-            solver:
-                Solver for the reduced linear system. Defaults to direct solver.
-        """
-        if trial2test is None and fom.V.is_parametric:
-            raise ValueError("Must provide 'trial2test' for FOMs with parameter-dependent test space inner product.")
-        self._trial2test_fun = trial2test
-        super().__init__(fom, U_basis, None, stability, continuity, residual, solver)
-        
-    def trial2test(self, basis: AffineLinear[Mu, Vector]) -> AffineLinear[Mu, Vector]:
-        r"""
-        Map trial basis vectors :math:`U_N` to test basis vectors :math:`V_N`.
-        
-        Args:
-            basis:
-                Trial basis vectors :math:`(n, k)`.
-        
-        Returns:
-            Test basis vectors :math:`(m, k)`.
-        """
-        if self._trial2test_fun is not None:
-            return self._trial2test_fun(basis)
-        else:
-            return self.fom.supremizer(basis)
-        
-    def add_basis(self, basis: AffineLinear[Mu, Vector] | Vector):
-        r"""Add new trial basis vectors and update the test basis via trial-2-test relation.
-        
-        Args:
-            basis:
-                New trial basis vectors :math:`(n, k)` to append.        
-        """
-        basis = wrap_affinelinear(basis)
-        self._add_basis_U(basis)
-        self._add_basis_V(self.trial2test(basis))
-    
-    def orthonormalize(self, full: bool = False, U: InnerProduct[Mu] | Matrix | None = None):
-        """
-        Orthonormalize the trial space basis with respect to a specified inner product.
-        
-        Performs orthonormalization using a parameter-independent
-        inner product. This improves numerical stability and ensures well-conditioned
-        reduced system matrices.
-        
-        This is only possible if the trial basis is parameter-independent.
-        
-        Args:
-            full:
-                If ``True``, the residual and test basis calculation is performed from scratch and the option is passed to `ulmRBM.products.orthonormalize`. This is more stable but expensive. 
-                If ``False``, update existing residual data and test space incrementally. This is faster but might accumulate errors over time.
-            U:
-                Parameter-independent inner product for trial space orthonormalization.
-                If ``None`` and :attr:`fom.U` is parameter-independent, uses :attr:`fom.U`.
-                Otherwise uses Euclidean inner product.
-        """        
-        QU = self._orthonormalize_U(full, U)
-        if full:
-            self.V_basis = self.trial2test(self.U_basis)
-        else:
-            self.V_basis = self.V_basis @ QU
-        
-
-class GalerkinROM(GalerkinFOM[Mu], Trial2TestROM[Mu]):
+class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
     r"""
     Reduced-order Galerkin model.
     
-    A Galerkin reduced-order model is a special case of `Trial2TestROM`, where :math:`V_N = U_N`.
+    A Galerkin reduced-order model is a special `ROM` for `GalerkinFOM`, where the trial space :math:`U` and test space :math:`V` are equal and thus also the reduced bases :math:`U_N` and :math:`V_N`, i.e. the trial-to-test operator of the reduced model is the identity.
     """
-        
+    
+    @property
+    def V_basis(self) -> AffineLinear[Mu, Vector]:
+        return wrap_affinelinear(self.U_basis)
+    
     def __init__(self, 
                  fom: GalerkinFOM[Mu],
+                 stability: StabilityEstimator[Mu],
+                 continuity: ContinuityEstimator[Mu] = None,
                  U_basis: AffineLinear[Mu, Vector] | Vector = None,
-                 stability: StabilityEstimator[Mu] | StabilityOptions = None,
-                 continuity: ContinuityEstimator[Mu] | ContinuityOptions = None,
-                 residual: ResidualCalculator[Mu] | ResidualOptions = None,
-                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver()):
+                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver(),
+                 residual: None | str = None):
         r"""
         Args:
             fom:
                 Full-order model to reduce.
-            U_basis:
-                Initial trial space basis :math:`(n, N)`. If ``None``, starts with empty basis.
             stability:
-                Estimator for the FOM stability constant. Required for online-efficient residual-based error estimation. If ``None``, defaults to :class:`StabilityMinTheta`.
+                Estimator for the FOM stability constant. Required for online-efficient residual-based error bounds, see `error_bound` and `error_bounds` (expept for ``alb``).
             continuity:
-                Estimator for the FOM continuity constant. If ``None``, defaults to :class:`ContinuityMaxTheta`.
-            residual:
-                Calculator for the dual norm of the residual. Required for residual-based error estimation. If ``None``, defaults to :class:`AffineResidual` if the FOM's test space inner product is parameter-independent, otherwise to :class:`DirectResidual`.
+                Estimator for the FOM continuity constant. Not required for `error_bound`, but for all other online-efficient error bounds, see `error_bounds` (exept for ``aub``). Provide an online-efficient implementation if you want to use any of thes error bounds in an online efficient way. If ``None``, defaults to `ExactContinuity`.
+            U_basis:
+                Initial trial space basis :math:`U_N` of shape  ``(n, N)``. If ``None``, starts with an empty basis.
             solver:
-                Solver for the reduced linear system. Defaults to direct solver.
+                Solver for the reduced linear system. Defaults to :class:`DirectSolver`.
+            residual: 'affine' or 'full' or None
+                Method to evaluate the residual. Required for online-efficient residual-based error bounds, see `error_bound` and `error_bounds`. The option 'affine' is only applicable if the test space inner product is parameter independent. This method exploits the affine structure of the problem is thus online-efficent. The option 'full' is a fall back that delegates all calculations to the full-order model and is thus not online-efficient. If ``None``, defaults to 'affine' if the FOM test space inner product is parameter independent and to 'full' otherwise.
         """
-        if fom.V is not fom.U:
-            raise ValueError("FOM must be Galerkin (i.e., have U=V) to create a GalerkinROM.")
-        trial2test = lambda basis: basis
-        Trial2TestROM.__init__(self, fom, U_basis, trial2test, stability, continuity, residual, solver)
+        if not isinstance(fom, GalerkinFOM):
+            raise ValueError("The FOM must be a GalerkinFOM for a GalerkinROM.")
+        trial2test = lambda basis: wrap_affinelinear(basis)
+        ROM.__init__(self, fom, stability, continuity, U_basis, trial2test, solver, residual)
 
     def add_basis(self, basis: AffineLinear[Mu, Vector] | Vector):
         self._add_basis_U(basis)

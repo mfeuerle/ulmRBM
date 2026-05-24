@@ -37,6 +37,9 @@ from collections.abc import Callable
 from ulmRBM.core import Matrix, Vector
 
 
+# Probably should any mechanism to check for convergence, right now you wont get informed at all
+
+
 class Solver(ABC):
     """Abstract base class for linear system solvers."""
     

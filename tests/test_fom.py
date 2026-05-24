@@ -131,7 +131,7 @@ class TestFOMInitialization:
         assert fom.dim == (U_dim, V_dim, None)
         assert fom.U is param_product_U
         assert fom.V is param_product_V
-        assert isinstance(fom.solver, Solver)
+        assert isinstance(fom._solver, Solver)
 
     def test_matrix_vector_compatibility(self, affine_matrix, affine_vector, param_product_U, param_product_V):
         """Test that matrix-vector operations work consistently."""
@@ -150,7 +150,7 @@ class TestFOMInitialization:
         """Test initialization with custom solver."""
         solver = DirectSolver()
         fom = FOM(affine_matrix, affine_vector, param_product_U, param_product_V, solver=solver)
-        assert fom.solver is solver
+        assert fom._solver is solver
 
     def test_callable_solver_wrapping(self, affine_matrix, affine_vector, param_product_U, param_product_V):
         """Test that callable solvers are properly wrapped."""
@@ -158,7 +158,7 @@ class TestFOMInitialization:
             return np.linalg.solve(A, b)
         
         fom = FOM(affine_matrix, affine_vector, param_product_U, param_product_V, solver=custom_solve)
-        assert isinstance(fom.solver, Solver)
+        assert isinstance(fom._solver, Solver)
 
     def test_dimension_validation(self, affine_matrix, affine_vector, param_product_U, param_product_V):
         """Test dimension mismatch error handling."""

@@ -556,7 +556,7 @@ class _InverseOperatorInnerProduct(InverseInnerProduct[Mu]):
         return Vinv.inner(mu, Binv_u)
     
     
-def orthonormalize(basis: Vector, ip: InnerProduct[Mu] | Matrix, full: bool = False) -> Tuple[Vector, np.ndarray]:
+def orthonormalize(basis: Vector, ip: InnerProduct[Mu] | Matrix) -> Tuple[Vector, np.ndarray]:
     r"""
     Orthonormalize a basis with respect to a given inner product.
     
@@ -565,9 +565,6 @@ def orthonormalize(basis: Vector, ip: InnerProduct[Mu] | Matrix, full: bool = Fa
             Basis matrix :math:`(n, N)` to orthonormalize.
         ip:
             Inner product or linear operator representation of an inner product with respect to which to orthonormalize. Must be parameter-independent.
-        full:
-            If ``True``, more stable but expensive.
-            If ``False``, faster, but might accumulate errors.
             
     Returns:
         - Orthonormalized basis matrix :math:`(n, N)`.
@@ -585,13 +582,10 @@ def orthonormalize(basis: Vector, ip: InnerProduct[Mu] | Matrix, full: bool = Fa
     Q = np.linalg.svd(inner)[0]
     basis_orth = basis @ Q
     # normalize
-    if full:
-        norm = ip.norm(NO_MU, basis_orth)
-    else:
-        norm = np.sqrt(np.abs(np.diag(Q.T @ inner @ Q))) # fast, but not stable
-        for i in range(norm.shape[0]):
-            if norm[i] < 1e-5:  # re-compute due to potentiall instability
-                norm[i] = ip.norm(NO_MU, basis_orth[:,i])
+    norm = np.sqrt(np.abs(np.diag(Q.T @ inner @ Q))) # fast, but not stable
+    for i in range(norm.shape[0]):
+        if norm[i] < 1e-5:  # re-compute due to potentiall instability
+            norm[i] = ip.norm(NO_MU, basis_orth[:,i])
     basis_orth = basis_orth / norm
     Q = Q / norm
     return basis_orth, Q

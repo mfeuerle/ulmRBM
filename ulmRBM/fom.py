@@ -22,7 +22,9 @@ from collections.abc import Callable
 from typing import Generic
 
 import numpy as np
-from scipy.sparse.linalg import eigsh
+from scipy.linalg import eigh
+from scipy.sparse import issparse
+from scipy.sparse.linalg import eigsh, LinearOperator, aslinearoperator, onenormest
 
 from ulmRBM.core import (
     NO_MU, Mu, Matrix, ParametricLinear, Vector, wrap_scalar,
@@ -67,14 +69,17 @@ class FOM(Generic[Mu]):
     V: InnerProduct[Mu]
     r"""Inner product :math:`(\cdot, \cdot)_V` on the test space :math:`V`."""
     
-    solver: Solver
+    _solver: Solver
     r"""Solver for the linear system :math:`B(\mu) u = f(\mu)`."""
     
-    _stability_fun: Callable[[Mu, FOM[Mu]],float] | None = None
+    _stability_solver: Callable[[Mu, FOM[Mu]],float] | str
     """Optional explicit function to compute the stability constant, bypassing the default eigenvalue-based computation."""
 
-    _continuity_fun: Callable[[Mu, FOM[Mu]],float] | None = None
+    _continuity_solver: Callable[[Mu, FOM[Mu]],float] | str
     """Optional explicit function to compute the continuity constant, bypassing the default eigenvalue-based computation."""
+    
+    _take_square_root_eigenvalues: bool = True
+    """needed for the Petrov-Galerkin and Galerkin cases"""
     
     _supremizer_func: Callable[[Vector, FOM[Mu]], AffineLinear[Mu, Vector]] | None = None
     r"""Internal storage if a custom supremizer function is provided."""
@@ -86,7 +91,7 @@ class FOM(Generic[Mu]):
         'tol': 1e-10,
         'rng': None
     }
-    r"""Options for the eigenvalue solver used in the default stability constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``fom._eigsh_options['tol'] = 1e-8``."""
+    r"""Options for the eigenvalue solver used in the default sparse stability constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``fom._eigsh_options['tol'] = 1e-8``."""
     
     _eigsh_options_continuity: dict = {
         'v0': None,
@@ -95,7 +100,7 @@ class FOM(Generic[Mu]):
         'tol': 1e-10,
         'rng': None
     }
-    r"""Options for the eigenvalue solver used in the default continuity constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``fom._eigsh_options['tol'] = 1e-8``."""
+    r"""Options for the eigenvalue solver used in the default sparse continuity constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``fom._eigsh_options['tol'] = 1e-8``."""
     
     @property
     def dim(self):
@@ -103,10 +108,10 @@ class FOM(Generic[Mu]):
         return (*self.B.shape,p)
     
     @property
-    def solver(self) -> Solver:
+    def _solver(self) -> Solver:
         return self._solver
-    @solver.setter
-    def solver(self, solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector]):
+    @_solver.setter
+    def _solver(self, solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector]):
         self._solver = wrap_solver(solver)
     
     
@@ -116,11 +121,11 @@ class FOM(Generic[Mu]):
                  U: InnerProduct[Mu],
                  V: InnerProduct[Mu],
                  l: AffineLinear[Mu, Matrix] | Matrix | None = None,
-                 stability: Callable[[Mu, FOM[Mu]], float] | float | None = None,
-                 continuity: Callable[[Mu, FOM[Mu]], float] | float | None = None,
+                 stability: Callable[[Mu, FOM[Mu]], float] | float | str = 'iterative',
+                 continuity: Callable[[Mu, FOM[Mu]], float] | float | str = 'iterative',
                  solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = IterativeSolver(),
                  supremizer: Callable[[Vector, FOM[Mu]], ParametricLinear[Mu, Vector]] = None):
-        """
+        r"""
         Args:
             B:
                 Affine decomposition of the system matrix.
@@ -133,9 +138,14 @@ class FOM(Generic[Mu]):
             l:
                 Optional affine decomposition of the output(s) of interest functional.
             stability:
-                Optional function (with signature ``(mu,fom)``) or constant to compute the stability constant at a given parameter value. If ``None``, the constant is computed via eigenvalue problems.
+                Parameter how the stability constant is computed. Might take the values ``'iterative'`` (default), ``'direct'``, ``'estimate'``, a scalar number ``s`` or a custom callable with signature ``s,x = stability(mu, fom)`` or ``s = stability(mu, fom)``.
+                
+                If set to ``'iterative'``, the stability constant is computed via the iterative solver `scipy.sparse.linalg.eigsh` (you might tweak its options by changing ``fom._eigsh_options_stability``). If set to ``'direct'``, the stability constant is computed via the dense solver `scipy.linalg.eigvals`. If set to ``'estimate'``, the stability  constant is estimated by the lower bound :math:`\sqrt{1/\|A^{-1}M\|_1}` using `scipy.sparse.linalg.onenormest`.
+                
+                Explanation to the values ``s`` and ``x``:
+                Consider the generalized eigenvalue problem :math:`A x = \lambda M x`, with :math:`A := B(\mu)^T V(\mu)^{-1} B(\mu)` and :math:`M := U(\mu)`, with the system matrix :math:`B(\mu)` and the inner product matrices :math:`U(\mu)` and :math:`V(\mu)` on trial and test space respectively. The stability constant is then given by squareroot of the smallest eigenvalue. Thus, ``s`` is :math:`\sqrt{\lambda_{\text{min}}}` and ``x`` the corresponding eigenvector.
             continuity:
-                Optional function (with signature ``(mu,fom)``) or constant to compute the continuity constant at a given parameter value. If ``None``, the constant is computed via an eigenvalue problems.
+                See the description of the ``stability`` parameter, with the only difference, that the continuity constant is given by the squareroot of the largest eigenvalue instead of the smallest. Thus, if ``'estimate'`` is selected, the continuity constant is estimated by the upper bound :math:`\sqrt{\|M^{-1}A\|_1}`.  If ``'iterative'`` was selected, you might tweak the options of the underlying eigenvalue solver by changing ``fom._eigsh_options_continuity``.
             solver:
                 Solver for the linear system. Defaults to a iterative solver.
             supremizer:
@@ -151,15 +161,30 @@ class FOM(Generic[Mu]):
         if l is not None and l.shape[1] != U.shape[0]:
             raise ValueError("l and U must have compatible dimensions.")
         
+        if isinstance(stability, str):
+            if stability not in ['direct', 'iterative', 'estimate']:
+                raise ValueError("Invalid value for 'stability' parameter. Expected 'direct', 'iterative', 'estimate' or a callable.")
+        else:
+            stability = wrap_scalar(stability)
+        
+        if isinstance(continuity, str):
+            if continuity not in ['direct', 'iterative', 'estimate']:
+                raise ValueError("Invalid value for 'continuity' parameter. Expected 'direct', 'iterative', 'estimate' or a callable.")
+        else:
+            continuity = wrap_scalar(continuity)
+            
+        
         self.B = wrap_affinelinear(B).compress()
         self.f = wrap_affinelinear(f).compress()
         self.l = wrap_affinelinear(l).compress() if l is not None else None
         self.U = U
         self.V = V
-        self.solver = solver
-        self._stability_fun = wrap_scalar(stability)
-        self._continuity_fun = wrap_scalar(continuity)
+        self._solver = solver
+        self._stability_solver = stability
+        self._continuity_solver = continuity
         self._supremizer_func = supremizer
+        self._eigsh_options_stability  = self._eigsh_options_stability.copy()
+        self._eigsh_options_continuity = self._eigsh_options_continuity.copy()
         
     def __repr__(self):
         shape = f"({self.dim[0]}, {self.dim[1]}"
@@ -167,7 +192,8 @@ class FOM(Generic[Mu]):
         shape += ")"
         return f"<{self.__class__.__name__} of dimension {shape}>"
     
-    def stability(self, mu: Mu) -> float:
+    
+    def stability(self, mu: Mu, eigenvector: bool = False) -> float:
         r"""
         Compute the stability constant at parameter value :math:`\mu`. 
         
@@ -181,51 +207,56 @@ class FOM(Generic[Mu]):
         .. math::
             \beta(\mu) = \inf_{u \in U} \sup_{v\in V} \frac{| \langle B(\mu) u, v \rangle_{V'\times V} |}{\|u\|_U \|v\|_V}
         
-        The constant is computed via eigenvalue problems using :func:`~scipy.sparse.linalg.eigsh` unless an explicit function
-        was provided during initialization.
-        
         Args:
             mu:
                 Parameter value at which to compute the stability constant.
                 
         Returns:
             Stability constant :math:`\beta(\mu) > 0`.
-            
-        .. note::
-            If the eigenvalue problem fails to converge, consider adjusting the options in ``fom._eigsh_options_stability`` or providing a custom stability function.
         """
-        if self._stability_fun is not None:
-            return self._stability_fun(mu, self)
-        else:
-            return self._stability(mu)
-    
-    def _stability(self, mu: Mu) -> float:
-        eigsh_opts = self._eigsh_options_stability.copy()
-        if self.B.shape[0] == self.B.shape[1]:
-            BVinvB = OperatorInnerProduct(self.B, self.V.dual, self.solver)
-            eigsh_opts['OPinv'] = BVinvB.dual(mu)
-        else:
-            from warnings import warn
-            warn("Default stability constant computation for non-square B is inefficient, consider providing a custom stability function.")
-            BVinvB = self.V.dual.restrict(self.B(mu))
-        eigsh_opts['A'] = BVinvB(mu)
-        eigsh_opts['M'] = self.U(mu)
-        eigsh_opts['k'] = 1
-        eigsh_opts['sigma'] = 0.0
-        eigsh_opts['which'] = 'LA'
-        eigsh_opts['return_eigenvectors'] = False
-        val = eigsh(**eigsh_opts)[0]
-        return np.sqrt(val)  
+        # for eigenvaector with only eigenvalue, probably use a shift
+        if isinstance(self._stability_solver, str):
+            A, M, Ainv, Minv = self._get_eigenvalue_operators(mu)
             
-    def continuity(self, mu: Mu) -> float:
+            if self._stability_solver == 'estimate':
+                if eigenvector:
+                    from warnings import warn
+                    warn("Stability estimation does not provide an eigenvector, but 'eigenvector=True' was requested. Using default iterative implementation.")
+                    val, vec = self._stability_sparse(A, M, Ainv, Minv)
+                else:
+                    val = self._stability_estimate(A, M, Ainv, Minv)
+            
+            elif self._stability_solver == 'direct':
+                val, vec = self._stability_dense(A, M, Ainv, Minv)
+                
+            else:
+                val, vec = self._stability_sparse(A, M, Ainv, Minv)
+        
+        else:
+            val_vec = self._stability_solver(mu, self)
+            try:
+                val, vec = val_vec
+            except:
+                val = val_vec
+                if eigenvector:
+                    from warnings import warn
+                    warn("Provided stability function does not return an eigenvector, but 'eigenvector=True' was requested. Using default iterative implementation.")
+                    A, M, Ainv, Minv = self._get_eigenvalue_operators(mu)
+                    val, vec = self._stability_sparse(A, M, Ainv, Minv)
+
+        if eigenvector:
+            return val, vec
+        else:
+            return val
+        
+    def continuity(self, mu: Mu, eigenvector: bool = False) -> float:
         r"""
         Compute the continuity constant at parameter value :math:`\mu`.
         
         .. math::
             \gamma(\mu) = \sup_{u \in U} \sup_{v\in V} \frac{| \langle B(\mu) u, v \rangle_{V'\times V} |}{\|u\|_U \|v\|_V}
         
-        The constant is equivalent to the operator norm of :math:`\|B(\mu)\|_{L(U,V')}` and is computed
-        via eigenvalue problems using :func:`~scipy.sparse.linalg.eigsh` unless an explicit function was provided during initialization.
+        The constant is equivalent to the operator norm of :math:`\|B(\mu)\|_{L(U,V')}`.
         
         Args:
             mu:
@@ -233,26 +264,121 @@ class FOM(Generic[Mu]):
                 
         Returns:
             Continuity constant :math:`\gamma(\mu) < \infty`.
-            
-        .. note::
-            If the eigenvalue problem fails to converge, consider adjusting the options in ``fom._eigsh_options_continuity`` or providing a custom continuity function.
         """
-        if self._continuity_fun is not None:
-            return self._continuity_fun(mu, self)
+        if isinstance(self._continuity_solver, str):
+            A, M, Ainv, Minv = self._get_eigenvalue_operators(mu)
+            
+            if self._continuity_solver == 'estimate':
+                if eigenvector:
+                    from warnings import warn
+                    warn("Continuity estimation does not provide an eigenvector, but 'eigenvector=True' was requested. Using default iterative implementation.")
+                    val, vec = self._continuity_sparse(A, M, Ainv, Minv)
+                else:
+                    val = self._continuity_estimate(A, M, Ainv, Minv)
+            
+            elif self._continuity_solver == 'direct':
+                val, vec = self._continuity_dense(A, M, Ainv, Minv)
+                
+            else:
+                val, vec = self._continuity_sparse(A, M, Ainv, Minv)
+        
         else:
-            return self._continuity(mu)
+            val_vec = self._continuity_solver(mu, self)
+            try:
+                val, vec = val_vec
+            except:
+                val = val_vec
+                if eigenvector:
+                    from warnings import warn
+                    warn("Provided continuity function does not return an eigenvector, but 'eigenvector=True' was requested. Using default sparse implementation.")
+                    A, M, Ainv, Minv = self._get_eigenvalue_operators(mu)
+                    val, vec = self._continuity_sparse(A, M, Ainv, Minv)
+            
+        if eigenvector:
+            return val, vec
+        else:
+            return val
+        
+    def _get_eigenvalue_operators(self, mu: Mu):
+        M = self.U(mu)
+        Minv = self.U.dual(mu)
+        if self.B.shape[0] == self.B.shape[1]:
+            A = OperatorInnerProduct(self.B, self.V.dual, self._solver)
+            return A(mu), M, A.dual(mu), Minv
+        else:
+            A = self.V.dual.restrict(self.B(mu))
+            return A(mu), M, None, Minv
+        
+    def _stability_dense(self, A, M, Ainv, Minv):
+        if not isinstance(A, np.ndarray) or issparse(A):
+            A = A @ np.eye(A.shape[0])
+        if not isinstance(M, np.ndarray) or issparse(M):
+            M = M @ np.eye(M.shape[0])
+        eigs, vecs = eigh(A, M)
+        val, vec = np.abs(eigs[0]), vecs[:,0]
+        if self._take_square_root_eigenvalues:
+            val = np.sqrt(val)
+        return val, vec
     
-    def _continuity(self, mu: Mu) -> float:
+    def _continuity_dense(self, A, M, Ainv, Minv):
+        if not isinstance(A, np.ndarray) or issparse(A):
+            A = A @ np.eye(A.shape[0])
+        if not isinstance(M, np.ndarray) or issparse(M):
+            M = M @ np.eye(M.shape[0])
+        eigs, vecs = eigh(A, M)
+        val, vec = np.abs(eigs[-1]), vecs[:,-1]
+        if self._take_square_root_eigenvalues:
+            val = np.sqrt(val)
+        return val, vec
+
+
+    def _stability_sparse(self, A, M, Ainv, Minv):
+        eigsh_opts = self._eigsh_options_stability.copy()
+        eigsh_opts['A'] = A
+        eigsh_opts['M'] = M
+        if Ainv is not None:
+            eigsh_opts['OPinv'] = Ainv
+        eigsh_opts['k'] = 1
+        eigsh_opts['sigma'] = 0.0
+        eigsh_opts['which'] = 'LA'
+        val, vec = eigsh(**eigsh_opts)
+        if self._take_square_root_eigenvalues:
+            val = np.sqrt(val)
+        return val, vec
+
+    def _continuity_sparse(self, A, M, Ainv, Minv):
         eigsh_opts = self._eigsh_options_continuity.copy()
-        BVinvB = self.V.dual.restrict(self.B(mu))
-        eigsh_opts['A'] = BVinvB(mu)
-        eigsh_opts['M'] = self.U(mu)
-        eigsh_opts['Minv'] = self.U.dual(mu)
+        eigsh_opts['A'] = A
+        eigsh_opts['M'] = M
+        eigsh_opts['Minv'] = Minv
         eigsh_opts['k'] = 1
         eigsh_opts['which'] = 'LA'
-        eigsh_opts['return_eigenvectors'] = False
-        val = eigsh(**eigsh_opts)[0]
-        return np.sqrt(val)
+        val, vec = eigsh(**eigsh_opts)
+        if self._take_square_root_eigenvalues:
+            val = np.sqrt(val)
+        return val, vec
+    
+    
+    def _stability_estimate(self, A, M, Ainv, Minv):
+        if Ainv is None:
+            solver = IterativeSolver(spd=True)
+            matmul = lambda x: solver(A, x)
+            Ainv = LinearOperator(shape=A.shape, matvec=matmul, matmat=matmul, rmatvec=matmul, rmatmat=matmul, dtype=A.dtype)
+        Ainv = aslinearoperator(Ainv)
+        M = aslinearoperator(M)
+        val = 1/onenormest(Ainv @ M)
+        if self._take_square_root_eigenvalues:
+            val = np.sqrt(val)
+        return val
+    
+    def _continuity_estimate(self, A, M, Ainv, Minv):
+        A = aslinearoperator(A)
+        Min = aslinearoperator(Minv)
+        val = onenormest(A @ Min)
+        if self._take_square_root_eigenvalues:
+            val = np.sqrt(val)
+        return val
+    
         
     def solve(self, mu: Mu, u0=None) -> Vector:
         r"""
@@ -267,7 +393,7 @@ class FOM(Generic[Mu]):
         Returns:
             State vector :math:`u(\mu) \in \mathbb{R}^n`.
         """
-        return self.solver(self.B(mu), self.f(mu), u0)
+        return self._solver(self.B(mu), self.f(mu), u0)
     
     def output(self, mu: Mu, u: Vector | None = None) -> Vector:
         r"""
@@ -290,11 +416,11 @@ class FOM(Generic[Mu]):
     
     def supremizer(self, u: Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
         r"""
-        Computes the supremizing operator in the test space applied to the given trial vector(s).
+        Application of the supremizing operator to given trial vector(s).
         
         The supremizing operator :math:`S(\mu): U \to V` is the unique isomorphic operator given by
         :math:`S(\mu) := R_V^{-1} B(\mu)` where :math:`R_V : V \to V'` is the Riesz map of the test space.
-        This function returns :math:`S(\mu) u` as a function of :math:`\mu`.
+        This function returns for given :math:`u` the result :math:`S(\mu) u` as a function in :math:`\mu`.
         
         If a custom supremizer function was provided during initialization, it is used. Otherwise, the supremizer is constructed from the system matrix and test space inner product. Thereby, if the test space inner product is parameter-independent, the supremizer :math:`S(\mu)` is affine with respect to :math:`\mu` and the result is an `AffineLinear`. Otherweise, a parameter-dependend function with no additional structure is resturned.
         
@@ -324,6 +450,8 @@ class GalerkinFOM(FOM[Mu]):
     Galerkin problems are a special case of Petrov-Galerkin problems, see :class:`FOM` for documentation, where the trial and test spaces coincide, i.e. it holds :math:`U = V` and :math:`m = n`.
     """
     
+    _take_square_root_eigenvalues = False
+    
     @property
     def V(self) -> InnerProduct[Mu]:
         return self.U
@@ -337,48 +465,36 @@ class GalerkinFOM(FOM[Mu]):
                  f: AffineLinear[Mu, Vector] | Vector, 
                  U: InnerProduct[Mu],
                  l: AffineLinear[Mu, Matrix] | Matrix | None = None,
-                 stability: Callable[[Mu],float] | float | None = None,
-                 continuity: Callable[[Mu],float] | float | None = None,
+                 stability: Callable[[Mu],float] | float | str = 'iterative',
+                 continuity: Callable[[Mu],float] | float | str = 'iterative',
                  solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = IterativeSolver()):
-        """
+        r"""
         Args:
             B:
                 Affine decomposition of the system matrix.
             f:
                 Affine decomposition of the right-hand side.
             U:
-                Inner product on the trial and test space.
+                Inner product on the trial space.
             l:
                 Optional affine decomposition of the output(s) of interest functional.
             stability:
-                Optional function or constant to compute the stability constant at a given parameter value. If ``None``, the constant is computed via eigenvalue problems.
+                Parameter how the stability constant is computed. Might take the values ``'iterative'`` (default), ``'direct'``, ``'estimate'``, a scalar number ``s`` or a custom callable with signature ``s,x = stability(mu, fom)`` or ``s = stability(mu, fom)``.
+                
+                If set to ``'iterative'``, the stability constant is computed via the iterative solver `scipy.sparse.linalg.eigsh` (you might tweak its options by changing ``fom._eigsh_options_stability``). If set to ``'direct'``, the stability constant is computed via the dense solver `scipy.linalg.eigvals`. If set to ``'estimate'``, the stability  constant is estimated by the lower bound :math:`1/\|A^{-1}M\|_1` using `scipy.sparse.linalg.onenormest`.
+                
+                Explanation to the values ``s`` and ``x``:
+                Consider the generalized eigenvalue problem :math:`A x = \lambda M x`, with :math:`A := 0.5 (B(\mu)^T + B(\mu))` and :math:`M := U(\mu)`, with the system matrix :math:`B(\mu)` and the inner product matrices :math:`U(\mu)` on the trial space. The stability constant is then given by the smallest eigenvalue. Thus, ``s`` is :math:`\lambda_{\text{min}}` and ``x`` the corresponding eigenvector.
             continuity:
-                Optional function or constant to compute the continuity constant at a given parameter value. If ``None``, the constant is computed via an eigenvalue problems.
+                See the description of the ``stability`` parameter, with the only difference, that the continuity constant is given by the largest eigenvalue instead of the smallest. Thus, if ``'estimate'`` is selected, the continuity constant is estimated by the upper bound :math:`\|M^{-1}A\|_1`.  If ``'iterative'`` was selected, you might tweak the options of the underlying eigenvalue solver by changing ``fom._eigsh_options_continuity``.
             solver:
                 Solver for the linear system. Defaults to a iterative solver.
+            supremizer:
+                Custom function for the supremizing operator. If ``None``, a default implementation is used. See :meth:`supremizer`.
         """
         super().__init__(B, f, U, U, l, stability, continuity, solver)
-        
-    def _stability(self, mu: Mu) -> float:
-        eigsh_opts = self._eigsh_options_stability.copy()
-        B = self.B(mu)
-        eigsh_opts['A'] = 0.5 * (B.T + B)    
-        eigsh_opts['M'] = self.U(mu)
-        eigsh_opts['k'] = 1
-        eigsh_opts['sigma'] = 0.0
-        eigsh_opts['which'] = 'LA'
-        eigsh_opts['return_eigenvectors'] = False
-        val = eigsh(**eigsh_opts)[0]
-        return val
     
-    def _continuity(self, mu: Mu) -> float:
-        eigsh_opts = self._eigsh_options_continuity.copy()
+    def _get_eigenvalue_operators(self, mu: Mu):
         B = self.B(mu)
-        eigsh_opts['A'] = 0.5 * (B.T + B)
-        eigsh_opts['M'] = self.U(mu)
-        eigsh_opts['Minv'] = self.U.dual(mu) 
-        eigsh_opts['k'] = 1
-        eigsh_opts['which'] = 'LA'
-        eigsh_opts['return_eigenvectors'] = False
-        val = eigsh(**eigsh_opts)[0]
-        return val
+        A = 0.5 * (B.T + B)
+        return A, self.U(mu), None, self.U.dual(mu)

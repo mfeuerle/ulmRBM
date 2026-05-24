@@ -15,7 +15,7 @@ import numpy as np
 from scipy.sparse import csr_array
 from scipy.sparse.linalg import aslinearoperator
 
-from ulmRBM.rom import (
+from ulmRBM.rom_old import (
     StabilityOptions, ContinuityOptions, ResidualOptions,
     StabilityExact, StabilityMinTheta,
     ContinuityExact, ContinuityMaxTheta,
