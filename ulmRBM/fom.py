@@ -69,7 +69,7 @@ class FOM(Generic[Mu]):
     V: InnerProduct[Mu]
     r"""Inner product :math:`(\cdot, \cdot)_V` on the test space :math:`V`."""
     
-    _solver: Solver
+    __solver: Solver
     r"""Solver for the linear system :math:`B(\mu) u = f(\mu)`."""
     
     _stability_solver: Callable[[Mu, FOM[Mu]],float] | str
@@ -109,10 +109,10 @@ class FOM(Generic[Mu]):
     
     @property
     def _solver(self) -> Solver:
-        return self._solver
+        return self.__solver
     @_solver.setter
     def _solver(self, solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector]):
-        self._solver = wrap_solver(solver)
+        self.__solver = wrap_solver(solver)
     
     
     def __init__(self,

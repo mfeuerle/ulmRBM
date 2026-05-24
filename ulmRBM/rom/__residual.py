@@ -17,7 +17,7 @@ from ulmRBM.core import NO_MU, Mu, Vector
 from ulmRBM.affine import AffineLinear
 
 if TYPE_CHECKING:
-    from ulmRBM.rom_old import ROM
+    from ulmRBM.rom import ROM
 
 
 class ResidualNormEvaluator(Generic[Mu]):
@@ -25,16 +25,16 @@ class ResidualNormEvaluator(Generic[Mu]):
     Base class for computing the dual norm of the full-order residual of a :class:`ROM`.
     
     Let :math:`f(\mu)` and :math:`B(\mu)` be the right-hand side and system matrix of the full-order model,
-    :math:`U_{\text{basis}}(\mu)` the reduced basis of the trial space, and :math:`u` the reduced solution vector.
+    :math:`U_{\text{basis}}` the reduced basis of the trial space, see `ROM.U_basis`, and :math:`u` the reduced solution vector.
     Then, :meth:`dual_norm` computes the dual norm of the residual:
     
     .. math::
-        \|r(\mu; u)\|_{V'} = \|f(\mu) - B(\mu) U_{\text{basis}}(\mu) u\|_{V'}.
+        \|r(\mu; u)\|_{V'} = \|f(\mu) - B(\mu) U_{\text{basis}} u\|_{V'}.
         
     The residual calculater works in two phases:
     
-    1. **Offline phase**: Precompute expensive data via :meth:`set_basis`, :meth:`add_basis` and :meth:`rotate_basis` to define :math:`U_{\text{basis}}(\mu)`.
-    2. **Online phase**: Provide fast computation of :math:`\|r(\mu; u)\|_{V'}` via :meth:`dual_norm` using the precomputed data.
+    1. **Offline phase**: Precompute expensive data :meth:`add_basis` and :meth:`rotate_basis`, where :meth:`add_basis` is called by the `ROM` to inform the residual evaluator about any expansion to `ROM.U_basis`, while :meth:`rotate_basis` is called by the `ROM` to inform the residual evaluator about any rotation of the existing basis, e.g. when the basis is orthonormalized.
+    2. **Online phase**: Provide fast computation of :math:`\|r(\mu; u)\|_{V'}` and :math:`\|f(\mu)\|_{V'}` via :meth:`dual_norm` and :meth:`dual_norm_rhs` using the precomputed data.
     """
     
     online_efficient: bool
@@ -53,7 +53,7 @@ class ResidualNormEvaluator(Generic[Mu]):
         
     def add_basis(self, basis: AffineLinear[Mu, Vector]):
         r"""
-        Extend the reduced trial basis :math:`U_{\text{basis}}(\mu)` for residual computation.
+        Extend the reduced trial basis :math:`U_{\text{basis}}` for residual computation.
         """
         pass
     
@@ -69,7 +69,7 @@ class ResidualNormEvaluator(Generic[Mu]):
         Compute the dual norm of the residual at parameter :math:`\mu` for the reduced solution :math:`u`, i.e.
         
         .. math::
-            \|r(\mu; u)\|_{V'}^2 = \|f(\mu) - B(\mu) U_{\text{basis}}(\mu) u\|_{V'}^2
+            \|r(\mu; u)\|_{V'}^2 = \|f(\mu) - B(\mu) U_{\text{basis}} u\|_{V'}^2
             
         where :math:`f(\mu)` and :math:`B(\mu)` are the right-hand side and system matrix of the full-order model,
         :math:`U_{\text{basis}}` the reduced basis of the trial space, and :math:`V'` the dual space of the test space.
@@ -85,7 +85,9 @@ class ResidualNormEvaluator(Generic[Mu]):
     
     
 
-class FullResidualNormEvaluator(ResidualNormEvaluator[Mu]):#
+class FullResidualNormEvaluator(ResidualNormEvaluator[Mu]):
+    """Default implementation that delegates all computations to the full-order model. This is not online-efficient.
+    """
     
     online_efficient = False
     
@@ -100,6 +102,8 @@ class FullResidualNormEvaluator(ResidualNormEvaluator[Mu]):#
     
     
 class AffineResidualNormEvaluator(ResidualNormEvaluator[Mu]):
+    """Exploiting the affine structure of the full-order model for online-efficient residual norm evaluation. Only applicable for FOMs with parameter-independent test space inner product.
+    """
     
     online_efficient = True
     
@@ -108,10 +112,19 @@ class AffineResidualNormEvaluator(ResidualNormEvaluator[Mu]):
     
     _R: np.ndarray
     r"""Precomputed Gram matrix of the residual components :math:`R_{ij} = (r_i, r_j)_{V'}`, :math:`i,j=0,\ldots,Q_r-1`."""
+    
+    def _theta_r(self, mu: Mu, u: Vector | None) -> np.ndarray:
+        theta_f = np.array([theta(mu) for theta in self.rom.fom.f.theta]).reshape(-1)
+        if u is None:
+            return theta_f
+        else:
+            theta_B = np.array([theta(mu) for theta in self.rom.fom.B.theta])
+            return np.concatenate((theta_f, np.outer(-u, theta_B).reshape(-1)))
+        
         
     def _initialize(self):
         if self.rom.fom.V.is_parametric:
-            raise ValueError("Affine only supports FOMs with parameter-independent test space inner product.")
+            raise ValueError("Affine residual evaluation only supports FOMs with parameter-independent test space inner product.")
     
         self._Qf = len(self.rom.fom.f)
         self._QB = len(self.rom.fom.B)
@@ -144,17 +157,10 @@ class AffineResidualNormEvaluator(ResidualNormEvaluator[Mu]):
         
         
     def dual_norm(self, mu: Mu, u: Vector) -> float:
-        theta = self._theta(mu, u)
+        theta = self._theta_r(mu, u)
         return np.sqrt(abs(theta.T @ self._R @ theta))
     
     def dual_norm_rhs(self, mu: Mu) -> float:
-        theta_f = self._theta(mu, None)
+        theta_f = self._theta_r(mu, None)
         return np.sqrt(abs(theta_f.T @ self._R[:self._Qf, :self._Qf] @ theta_f))
     
-    def _theta(self, mu: Mu, u: Vector | None) -> np.ndarray:
-        theta_f = np.array([theta(mu) for theta in self.rom.fom.f.theta]).reshape(-1)
-        if u is None:
-            return theta_f
-        else:
-            theta_B = np.array([theta(mu) for theta in self.rom.fom.B.theta])
-            return np.concatenate((theta_f, np.outer(-u, theta_B).reshape(-1)))

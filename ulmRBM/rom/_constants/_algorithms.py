@@ -39,8 +39,8 @@ def greedy_constant_estimator(
     estimator: EfficientConstantEstimator[Mu],
     mu_train: list[Mu],
     Nmax: int = 100,
-    rtol: float = 1e-2,
-    atol: float = 1e-3,
+    rtol: float = 1e-1,
+    atol: float = 1e-2,
     callback: Callable[[EfficientConstantEstimator[Mu], Mu], None] | None = None
 ) -> tuple[int, np.ndarray, np.ndarray]:
     r"""Greedy algorithm to construct a constant estimator.
@@ -57,7 +57,7 @@ def greedy_constant_estimator(
         rtol: 
             Relative error tolerance for stopping criterion.
         atol: 
-            Absolute error tolerance for stopping criterion.
+            Absolute error tolerance for stopping criterion (will be ignored as long is the relative error is infinite).
         callback: 
             Optional callback called after each enrichment with signature ``(estimator, mu)``, where mu is the parameter value of the last enrichment.
     """
@@ -101,7 +101,7 @@ def greedy_constant_estimator(
         rel_err_decay.append(rel_err)
         mu_idx = original_idx[idx]
         
-        if abs_err <= atol or rel_err <= rtol:
+        if rel_err <= rtol or (np.isfinite(rel_err) and abs_err <= atol):
             flag = 0
             break
         

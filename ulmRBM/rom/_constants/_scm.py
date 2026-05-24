@@ -147,12 +147,13 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
         
         theta = self._eval_theta(mu)
         sigma, w = self._get_exact_constant(mu)
+        w = w.reshape(-1,1)
         
         if isinstance(self.fom, GalerkinFOM):
             y = np.array((w @ self.fom.B @ w).data) / self.fom.U.norm(NO_MU, w)**2
         else:
             sigma = sigma**2
-            y = self.fom.V.dual.inner(NO_MU, np.vstack((self.fom.B @ w).data).T) / self.fom.U.norm(NO_MU, w)**2
+            y = self.fom.V.dual.inner(NO_MU, np.hstack((self.fom.B @ w).data)) / self.fom.U.norm(NO_MU, w)**2
             y += np.triu(y, k=1).T
             y = y[np.tril_indices(y.shape[0])]
         
@@ -226,9 +227,6 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
                 eigsh_opts['which'] = 'LM'
                 values[0] = eigsh(**eigsh_opts)[0]
                 
-                # on could use OperatorInnerProduct.dual for Opinv together with a mechanism to check 
-                # if OperatorInnerProduct.dual succeeds / converged. Otherwise, matrix is singular and
-                # we can stop solving for the eigenvalue as lambda_min = 0.0
                 del eigsh_opts['Minv']
                 eigsh_opts['sigma'] = 0.0
                 try:

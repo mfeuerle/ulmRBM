@@ -280,17 +280,16 @@ class ROM(FOM[Mu]):
         Returns:
             True error :math:`\|u(\mu) - U_N u_N(\mu)\|_U`.
         """
-        if abs or rel:
-            if u_fom is None: u_fom = self.fom.solve(mu)
-            abs_err = self.fom.U.norm(mu, u_fom - self.reconstruct(mu, u))
-            if rel:
-                rel_err = abs_err / self.fom.U.norm(mu, u_fom)
-                if abs:
-                    return abs_err, rel_err
-                else:
-                    return rel_err
-            else:
-                return abs_err 
+        if not (abs or rel):
+            raise ValueError("At least one of 'abs' or 'rel' must be True.")
+        
+        if u_fom is None: u_fom = self.fom.solve(mu)
+        abs_err = self.fom.U.norm(mu, u_fom - self.reconstruct(mu, u))
+        if rel:
+            rel_err = abs_err / self.fom.U.norm(mu, u_fom)
+            if abs: return abs_err, rel_err
+            else: return rel_err
+        else: return abs_err 
     
     def error_bound(self, mu: Mu, u: Vector = None) -> float:
         r"""Guaranteed a-posteriori upper bound of the absolute error.
