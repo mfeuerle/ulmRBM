@@ -175,7 +175,7 @@ class ContinuityEstimator(ConstantEstimator[Mu]):
         ...
         
     def __call__(self, mu: Mu) -> float:
-        rf"""{ConstantEstimator.upper_bound.__doc__}"""
+        rf"""{ContinuityEstimator.upper_bound.__doc__}"""
         return self.upper_bound(mu)
     
     

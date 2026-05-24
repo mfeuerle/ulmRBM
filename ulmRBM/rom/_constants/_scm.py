@@ -150,7 +150,7 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
         w = w.reshape(-1,1)
         
         if isinstance(self.fom, GalerkinFOM):
-            y = np.array((w @ self.fom.B @ w).data) / self.fom.U.norm(NO_MU, w)**2
+            y = np.array((w.T @ self.fom.B @ w).data) / self.fom.U.norm(NO_MU, w)**2
         else:
             sigma = sigma**2
             y = self.fom.V.dual.inner(NO_MU, np.hstack((self.fom.B @ w).data)) / self.fom.U.norm(NO_MU, w)**2
