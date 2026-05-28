@@ -19,13 +19,6 @@ import numpy as np
 from ulmRBM.core import Mu
 from ulmRBM.fom import FOM
 
-
-
-# make it, such that in greed, the error of the constants is always one order of magnitude smaller than the error. Thus adaptive refinement of the constant estimators.
-# Maybe add constants estimators to the FOM Model
-# option to greedy for adaptive constants on/off
-
-
 class ConstantEstimator(Generic[Mu]):
     r"""
     Base class for estimating stability and continuity constants for full-order models.
@@ -44,7 +37,7 @@ class ConstantEstimator(Generic[Mu]):
     fom: FOM[Mu]
     """The full-order model for which the constant is estimated."""
     
-    n: int = 0
+    n: int
     """Number of offline samples used for the estimator."""
     
     _initialized: bool = False
@@ -60,6 +53,7 @@ class ConstantEstimator(Generic[Mu]):
                 Full-order model for which to estimate the constant.
         """
         self._fom = fom
+        self.n = 0
     
     def update(self, mu: Mu):
         r"""

@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 import numpy as np
 from scipy.optimize import linprog
-from scipy.linalg import eigvals
+from scipy.linalg import eigvalsh
 from scipy.sparse.linalg import eigsh, LinearOperator, aslinearoperator, onenormest
 
 from ulmRBM.core import Mu, NO_MU
@@ -49,11 +49,11 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
             fom:
                 Full-order model for which to estimate the constant.
             mus:
-                Parameter set .
+                Parameter set from which to select the ``Mp`` in the online linear optimization problem. Selecting these parameters is done online for each new parameter value. Thus, the SCM online-phase scales with the length of ``mus``. On the other hand, being able to select parameters form ``mus`` that are close to the parameter for which the bounds are evaluated online might enhance the quality of the bounds.
             Me:
-                Number of constraints added to the online linear optimization problem based on the exact constants :math:`\sigma(\tilde\mu)`, where the ``Me`` parameters :math:`\tilde\mu` are selected from the parameter set that was added using :meth:`update`.
+                Number of constraints added to the online linear optimization problem based on the exact constants :math:`\sigma(\tilde\mu)`, where the parameters :math:`\tilde\mu` are the ``Me`` nearest neigbors selected from the parameter set that was created using :meth:`update`.
             Mp:
-                Number of constraints added to the online linear optimization problem based on approximations :math:`\hat\sigma(\tilde\mu)`, where the ``Mp`` parameters :math:`\tilde\mu` are selected from the parameter set ``mus``.
+                Number of constraints added to the online linear optimization problem based on approximations :math:`\hat\sigma(\tilde\mu)`, where the parameters :math:`\tilde\mu` are the ``Mp`` nearest neighbors selected from the parameter set ``mus``.
                 
                 for the ``Mp`` nearest neighbors :math:`\tilde\mu \in \mathcal{P}_p`.
             dist:
@@ -194,10 +194,18 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
         
         
     def _eigenvalues(self, A, pq):
+        r"""Solves the eigenvalue problem :math:`Av = \lambda Uv` and returns the smallest and largest eigenvalue.
+        
+        Args:
+            A:
+                Symmetric matrix or linear operator defining the eigenvalue problem.
+            pq:
+                Tuple ``(q,)`` (Galerkin) and ``(p,q)`` (Petrov-Galerkin). Used to check if ``p==q``, as only in this case it is known, that the spectrum is either positive or negative (including zero), which makes solving easier.
+        """
         if self._eigenvalue_solver == 'direct':
             A = A @ np.eye(A.shape[0])
             U = self.fom.U(NO_MU) @ np.eye(A.shape[0])
-            eigs = eigvals(A, U)
+            eigs = eigvalsh(A, U, overwrite_a=True, overwrite_b=True)
             values = [eigs.real.min(), eigs.real.max()]
         
         elif self._eigenvalue_solver == 'estimate':

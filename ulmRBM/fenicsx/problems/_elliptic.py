@@ -16,8 +16,6 @@ __all__ = [
     'simple_elliptic',
 ]
 
-# def simple_elliptic_operator(dim: int) -> tuple[AffineObject, AffineObject, AffineObject]:
-
 
 def simple_elliptic(nx, ny) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Parametric elliptic problem on the unit square.
@@ -40,7 +38,6 @@ def simple_elliptic(nx, ny) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu
     -------
     See `weak_problem` for details on the return values.
     """
-    
 
     msh = mesh.create_unit_square(MPI.COMM_WORLD, nx, ny)
     

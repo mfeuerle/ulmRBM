@@ -49,17 +49,20 @@ class ResidualNormEvaluator(Generic[Mu]):
         if rom.U_basis is not None: self.add_basis(rom.U_basis)
         
     def _initialize(self):
+        r"""
+        Setup the the norm evaluater.
+        """
         pass
         
     def add_basis(self, basis: AffineLinear[Mu, Vector]):
         r"""
-        Extend the reduced trial basis :math:`U_{\text{basis}}` for residual computation.
+        Extend the reduced trial basis :math:`U_{\text{basis}}`.
         """
         pass
     
     def rotate_basis(self, rotation: np.ndarray):
         r"""
-        Rotate the reduced trial basis :math:`U_{\text{basis}}` for residual computation, i.e. replace :math:`U_{\text{basis}}` by :math:`U_{\text{basis}} \cdot \text{rotation}`.
+        Rotate the reduced trial basis :math:`U_{\text{basis}}`, i.e. replace :math:`U_{\text{basis}}` by :math:`U_{\text{basis}} \cdot \text{rotation}`.
         """
         pass
         
@@ -69,15 +72,23 @@ class ResidualNormEvaluator(Generic[Mu]):
         Compute the dual norm of the residual at parameter :math:`\mu` for the reduced solution :math:`u`, i.e.
         
         .. math::
-            \|r(\mu; u)\|_{V'}^2 = \|f(\mu) - B(\mu) U_{\text{basis}} u\|_{V'}^2
+            \|r(\mu; u)\|_{V'} = \|f(\mu) - B(\mu) U_{\text{basis}} u\|_{V'}
             
         where :math:`f(\mu)` and :math:`B(\mu)` are the right-hand side and system matrix of the full-order model,
         :math:`U_{\text{basis}}` the reduced basis of the trial space, and :math:`V'` the dual space of the test space.
         """
         ...
         
-    @abstractmethod    
+    @abstractmethod
     def dual_norm_rhs(self, mu: Mu) -> float:
+        r"""
+        Compute the dual norm of the right-hand side at parameter :math:`\mu`, i.e.
+        
+        .. math::
+            \|f(\mu)\|_{V'}
+            
+        where :math:`f(\mu)` is the right-hand side of the full-order model and :math:`V'` the dual space of the test space.
+        """
         ...
     
     def __repr__(self):

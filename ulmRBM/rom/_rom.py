@@ -17,7 +17,7 @@ from ulmRBM.fom import FOM, GalerkinFOM
 from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 from ulmRBM.affine import AffineLinear, wrap_affinelinear
 
-from ._constants import StabilityEstimator, ContinuityEstimator, ExactContinuity
+from ._constants import StabilityEstimator, ContinuityEstimator, ExactContinuity, EfficientConstantEstimator
 from .__residual import ResidualNormEvaluator, AffineResidualNormEvaluator, FullResidualNormEvaluator
 
 class ROM(FOM[Mu]):
@@ -141,11 +141,12 @@ class ROM(FOM[Mu]):
             U_basis:
                 Initial trial space basis :math:`U_N` of shape  ``(n, N)``. If ``None``, starts with an empty basis.
             trial2test:
-                Trial-to-Test operator :math:`T(\mu)` to define the test space basis via :math:`V_N(\mu) = T(\mu) U_N`. If ``None``, defaults to the supremizing operator of the full-order model if the test space inner product is parameter independent, otherwise otherwise the user has to provide a custom operator.
+                Trial-to-Test operator :math:`T(\mu)` to define the test space basis via :math:`V_N(\mu) = T(\mu) U_N`. If ``None`` and the test space inner product of ``fom`` is parameter independent, defaults to the supremizing operator of the full-order model (which always yields a well-posed reduced model), otherwise the user has to provide a custom operator.
             solver:
-                Solver for the reduced linear system. Defaults to :class:`DirectSolver`.
-            residual: 'affine' or 'full' or None
-                Method to evaluate the residual. Required for online-efficient residual-based error bounds, see `error_bound` and `error_bounds`. The option 'affine' is only applicable if the test space inner product is parameter independent. This method exploits the affine structure of the problem is thus online-efficent. The option 'full' is a fall back that delegates all calculations to the full-order model and is thus not online-efficient. If ``None``, defaults to 'affine' if the FOM test space inner product is parameter independent and to 'full' otherwise.
+                Solver for the reduced linear system. Defaults to `DirectSolver`.
+            residual: 
+                Method to evaluate the residual; takes values ``'affine'`` or ``'full'``.
+                Required for residual-based error bounds, see `error_bound` and `error_bounds`. The option ``'affine'`` is only applicable if the test space inner product is parameter independent. This method exploits the affine structure of the problem and thus is online-efficent. The option ``'full'`` is a fall back that delegates all calculations to the full-order model and is thus not online-efficient. If ``None``, defaults to ``'affine'`` if possible, otherwise ``'full'``.
         """
         
         if continuity is None: continuity = ExactContinuity(fom)
@@ -184,6 +185,7 @@ class ROM(FOM[Mu]):
         This method is in most cases called internally anyways. But if you want to ensure, that the reduced-order model is ready for the online stage, you mmight call this method.
         """
         if self._need_assemble:
+            self._need_assemble = False
             self.B = None
             self.f = None
             self.l = None
@@ -193,7 +195,6 @@ class ROM(FOM[Mu]):
                     self.B = self.V_basis.T @ self.fom.B @ self.U_basis
             if self.U_basis is not None and self.fom.l is not None:
                 self.l = self.fom.l @ self.U_basis
-            self._need_assemble = False
         
         
     def add_basis(self, basis: Vector):
@@ -247,8 +248,8 @@ class ROM(FOM[Mu]):
                 If ``None`` and :attr:`fom.U` is parameter-independent, uses :attr:`fom.U`.
                 Otherwise uses Euclidean inner product.
         """
-        U = self._orthonormalize_U(U)
-        self.V_basis = self.V_basis @ U
+        Q = self._orthonormalize_U(U)
+        self.V_basis = self.V_basis @ Q
         
     def _orthonormalize_U(self, U: InnerProduct[Mu] | Matrix | None) -> np.ndarray: 
         if U is None: 
@@ -301,17 +302,17 @@ class ROM(FOM[Mu]):
     def error_bounds(self, mu: Mu, u: Vector = None, aub: bool = False, rub: bool = False, alb: bool = False, rlb: bool = False) -> dict:
         r"""Guaranteed a-posteriori error bounds on the reduced solution.
         
-        For :math:`\mu`, let :math:`u(\mu)` be the full-order solution, :math:`u_N(\mu)` the reduced solution and :math:`U_N u_N(\mu)` the reconstructed reduced solution. Further, let :math:`\beta_{\text{LB}}(\mu)` and :math:`\gamma_{\text{UB}}(\mu)` be lower and upper bounds for the stability and continuity constants of the full-order model, respectively, and :math:`r(\mu) = f(\mu) - B(\mu) U_N u_N(\mu)` the residual.
+        For :math:`\mu`, let :math:`u(\mu)` be the full-order solution, :math:`u_N(\mu)` the reduced solution and :math:`U_N u_N(\mu)` the reconstructed reduced solution. Further, let :math:`\sigma_{\text{LB}}(\mu)` and :math:`\gamma_{\text{UB}}(\mu)` be lower and upper bounds for the stability and continuity constants of the full-order model, respectively, and :math:`r(\mu) = f(\mu) - B(\mu) U_N u_N(\mu)` the residual.
         
         Then, the following absolute error bounds are available:
         
         .. math::
-            \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{UB}}(\mu)} \leq \|u(\mu) - U_N u_N(\mu)\|_U \leq \frac{\|r(\mu)\|_{V'}}{\beta_{\text{LB}}(\mu)}
+            \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{LB}}(\mu)} \leq \|u(\mu) - U_N u_N(\mu)\|_U \leq \frac{\|r(\mu)\|_{V'}}{\sigma_{\text{LB}}(\mu)}
             
         And the following relative error bounds are available:
         
         .. math::
-            \frac{\|r(\mu)\|_{V'}}{\beta_{\text{LB}}(\mu)}\frac{\sigma_{\text{UB}}(\mu)}{\|f(\mu)\|_{V'}} \leq \frac{\|u(\mu) - U_N u_N(\mu)\|_U}{\|u(\mu)\|_U} \leq \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{UB}}(\mu)}\frac{\beta_{\text{LB}}(\mu)}{\|f(\mu)\|_{V'}}
+            \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{LB}}(\mu)}\frac{\sigma_{\text{UB}}(\mu)}{\|f(\mu)\|_{V'}} \leq \frac{\|u(\mu) - U_N u_N(\mu)\|_U}{\|u(\mu)\|_U} \leq \frac{\|r(\mu)\|_{V'}}{\sigma_{\text{LB}}(\mu)}\frac{\gamma_{\text{UB}}(\mu)}{\|f(\mu)\|_{V'}}
         
         Args:
             mu:
@@ -323,9 +324,9 @@ class ROM(FOM[Mu]):
             rub:
                 If ``True``, compute the relative upper bound.
             alb:
-                If ``True``, compute the absolute lower bound.
+                If ``True``, compute the absolute lower bound (only available if the continuity estimator is a `EfficientConstantEstimator`).
             rlb:
-                If ``True``, compute the relative lower bound.
+                If ``True``, compute the relative lower bound (only available if the stability and continuity estimator are `EfficientConstantEstimator`).
         
         Returns:
             Dictionary containing the computed error bounds. The keys are 'aub', 'rub', 'alb' and 'rlb' for each requested bound.
@@ -333,23 +334,35 @@ class ROM(FOM[Mu]):
         .. note::
             Due to the square-root effect, the bounds are only accurate up to ``sqrt(eps)`` where ``eps`` is the machine precision. Thus, for smaller errors, the lower bounds might be wrong and the upper bounds might be overestimated.
         """
-        if u is None: u = self.solve(mu)
-        r = self._residual_evaluator.dual_norm(mu, u)
-        
-        if aub or rlb or rub:
-            beta = self._fom_stability_estimator(mu)
             
-        if alb or rlb or rub:
-            gamma = self._fom_continuity_estimator(mu)
+        if alb or rlb:
+            if isinstance(self._fom_stability_estimator, EfficientConstantEstimator):
+                beta_UB = self._fom_stability_estimator.upper_bound(mu)
+            else:
+                raise ValueError("(Relative) lower bound of the error is only possible if the stability estimator is efficient.")
+            
+        if rlb:
+            if isinstance(self._fom_continuity_estimator, EfficientConstantEstimator):
+                gamma_LB = self._fom_continuity_estimator.lower_bound(mu)
+            else:
+                raise ValueError("Relative lower bound of the error is only possible if the continuity estimator is efficient.")
+            
+        if aub or rub:
+            beta_LB = self._fom_stability_estimator.lower_bound(mu)
+        if rub:
+            gamma_UB = self._fom_continuity_estimator.upper_bound(mu)
             
         if rlb or rub:
             f = self._residual_evaluator.dual_norm_rhs(mu)
+        
+        if u is None: u = self.solve(mu)
+        r = self._residual_evaluator.dual_norm(mu, u)
             
         err = dict()
-        if aub: err['aub'] = r / beta
-        if alb: err['alb'] = r / gamma
-        if rub: err['rub'] = gamma/beta * r/f
-        if rlb: err['rlb'] = beta/gamma * r/f
+        if aub: err['aub'] = r / beta_LB
+        if alb: err['alb'] = r / gamma_LB
+        if rub: err['rub'] = gamma_UB/beta_LB * r/f
+        if rlb: err['rlb'] = beta_UB/gamma_LB * r/f
         return err
 
 
@@ -382,6 +395,7 @@ class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
     
     @property
     def V_basis(self) -> AffineLinear[Mu, Vector]:
+        if self.U_basis is None: return None
         return wrap_affinelinear(self.U_basis)
     
     def __init__(self, 
@@ -414,5 +428,5 @@ class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
     def add_basis(self, basis: AffineLinear[Mu, Vector] | Vector):
         self._add_basis_U(basis)
     
-    def orthonormalize(self, full: bool = False, U: InnerProduct[Mu] | Matrix | None = None):
-        self._orthonormalize_U(full, U)
+    def orthonormalize(self, U: InnerProduct[Mu] | Matrix | None = None):
+        self._orthonormalize_U(U)

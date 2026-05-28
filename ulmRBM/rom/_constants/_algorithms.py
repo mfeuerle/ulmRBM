@@ -11,12 +11,11 @@ __all__ = [
 from collections.abc import Callable
 
 import time
-from warnings import warn
 import numpy as np
 
 from ulmRBM.core import Mu
 
-from ._interface import EfficientConstantEstimator
+from ._interface import EfficientConstantEstimator, StabilityEstimator
 
 def _get_max_error(estimator: EfficientConstantEstimator[Mu], mu_train: np.ndarray) -> tuple[float, float, int]:
     err = np.array([estimator.error_bound(mu, rel=True, abs=True) for mu in mu_train])
@@ -29,47 +28,49 @@ def _get_max_error(estimator: EfficientConstantEstimator[Mu], mu_train: np.ndarr
     if np.isinf(rel_max):
         inf_mask = np.argwhere(np.isinf(rel_err)).flatten()
         idx = inf_mask[np.argmax(abs_err[inf_mask])]
-        abs_max = abs_err[idx]
-    else: 
-        abs_max = abs_err.max()
-    return rel_max, abs_max, idx
+    return rel_max, idx
 
 
 def greedy_constant_estimator(
     estimator: EfficientConstantEstimator[Mu],
     mu_train: list[Mu],
-    Nmax: int = 100,
-    rtol: float = 1e-1,
-    atol: float = 1e-2,
+    N: int = 100,
+    tol: float = 1e-1,
     callback: Callable[[EfficientConstantEstimator[Mu], Mu], None] | None = None
 ) -> tuple[int, np.ndarray, np.ndarray]:
     r"""Greedy algorithm to construct a constant estimator.
     
-    Iteratively updates the estimater using the parameter in ``mu_train`` with the largest relative error.
+    Iteratively updates the estimator using the parameter in ``mu_train`` with the largest relative error.
     
     Args:
         estimator: 
             The constant estimator to enrich.
         mu_train: 
             Training set of parameter values.
-        Nmax: 
-            Maximum number of parameters to add (not total number).
-        rtol: 
-            Relative error tolerance for stopping criterion.
-        atol: 
-            Absolute error tolerance for stopping criterion (will be ignored as long is the relative error is infinite).
+        N: 
+            Maximum number of iterations / updates to the estimator (not maximum total number of updates, which is  ``estimator.n + N``).
+        tol: 
+            Error tolerance for stopping criterion.
         callback: 
             Optional callback called after each enrichment with signature ``(estimator, mu)``, where mu is the parameter value of the last enrichment.
+            
+    Returns
+    ---------
+    flag:
+        0 if tolerance reached, 1 if Nmax reached, 2 if training set exhausted.
+    err:
+        ``err[i]`` is the maximum error over the training set at iteration ``i``. Note that the last entry might be ``np.nan``, if the error of the last iteration was not computed (e.g. if ``Nmax`` is reached).
+    idx: 
+        Array of selected parameter indices, i.e. ``mu_train[idx]`` gives the selected parameter values.
     """
     
     
-    print(f"Starting greedy for constant estimator")
+    print(f"Starting greedy for {"stability" if isinstance(estimator, StabilityEstimator) else "continuity"} estimator")
     start_time = time.time()
     
     mu_train = np.array(mu_train)
     
-    abs_err_decay = []
-    rel_err_decay = []
+    err_decay = []
     selected_mu_idx = []
     original_idx = np.arange(len(mu_train))
     
@@ -79,7 +80,7 @@ def greedy_constant_estimator(
     if estimator.n == 0:
         start = 1
     
-        print(f"{time.time() - start_time:6.1f}s: Iteration {0:3d}: initializing & updating estimator (idx={0})...")
+        print(f"{time.time() - start_time:6.1f}s: Iteration {0:3d}: initializing & updating estimator at mu_train[{0}]...")
         estimator.update(mu_train[0])
         
         if callback is not None:
@@ -90,22 +91,21 @@ def greedy_constant_estimator(
         selected_mu_idx.append(0)
 
 
-    for n in range(start, Nmax):
+    for n in range(start, N):
         
         if len(mu_train) == 0:
             flag = 2
             break
     
-        rel_err, abs_err, idx = _get_max_error(estimator, mu_train)
-        abs_err_decay.append(abs_err)
-        rel_err_decay.append(rel_err)
+        err, idx = _get_max_error(estimator, mu_train)
+        err_decay.append(err)
         mu_idx = original_idx[idx]
         
-        if rel_err <= rtol or (np.isfinite(rel_err) and abs_err <= atol):
+        if err <= tol:
             flag = 0
             break
         
-        print(f"{time.time() - start_time:6.1f}s: Iteration {n:3d}: current error: rel={rel_err:.2e}, abs={abs_err:.2e}, updating estimator (idx={mu_idx})...")
+        print(f"{time.time() - start_time:6.1f}s: Iteration {n:3d}{f" (n={estimator.n:3d})" if not start else ""}: max. error={err:.2e}, updating estimator at mu_train[{mu_idx}]...")
         
         estimator.update(mu_train[idx])
         
@@ -118,8 +118,11 @@ def greedy_constant_estimator(
         
     codes= {0: "tolerance reached", 1: "Nmax reached", 2: "training set exhausted"}
         
-    print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}: stopping due to {codes[flag]}, final error: rel={rel_err:.2e}, abs={abs_err:.2e})\n")
+    print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (n={estimator.n:3d})" if not start else ""}: stopping due to {codes[flag]}, max. error={err:.2e}\n")
+    
+    if flag != 0:
+        err_decay.append(np.nan)
 
-    return flag, np.array(rel_err_decay), np.array(abs_err_decay), np.array(selected_mu_idx, dtype=int)
+    return flag, np.array(err_decay),  np.array(selected_mu_idx, dtype=int)
     
     

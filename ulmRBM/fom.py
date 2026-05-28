@@ -210,6 +210,8 @@ class FOM(Generic[Mu]):
         Args:
             mu:
                 Parameter value at which to compute the stability constant.
+            eigenvector:
+                Whether to return the corresponding eigenvector of the underlying eigenvalue problem defining the stability constant.
                 
         Returns:
             Stability constant :math:`\beta(\mu) > 0`.
@@ -261,6 +263,8 @@ class FOM(Generic[Mu]):
         Args:
             mu:
                 Parameter value at which to compute the continuity constant.
+        eigenvector:
+                Whether to also return the corresponding eigenvector of the underlying eigenvalue problem defining the continuity constant.
                 
         Returns:
             Continuity constant :math:`\gamma(\mu) < \infty`.
