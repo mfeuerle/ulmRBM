@@ -314,9 +314,9 @@ class FOM(Generic[Mu]):
             return A(mu), M, None, Minv
         
     def _stability_dense(self, A, M, Ainv, Minv):
-        if not isinstance(A, np.ndarray) or issparse(A):
+        if not isinstance(A, np.ndarray):
             A = A @ np.eye(A.shape[0])
-        if not isinstance(M, np.ndarray) or issparse(M):
+        if not isinstance(M, np.ndarray):
             M = M @ np.eye(M.shape[0])
         eigs, vecs = eigh(A, M)
         val, vec = np.abs(eigs[0]), vecs[:,0]
@@ -325,9 +325,9 @@ class FOM(Generic[Mu]):
         return val, vec
     
     def _continuity_dense(self, A, M, Ainv, Minv):
-        if not isinstance(A, np.ndarray) or issparse(A):
+        if not isinstance(A, np.ndarray):
             A = A @ np.eye(A.shape[0])
-        if not isinstance(M, np.ndarray) or issparse(M):
+        if not isinstance(M, np.ndarray):
             M = M @ np.eye(M.shape[0])
         eigs, vecs = eigh(A, M)
         val, vec = np.abs(eigs[-1]), vecs[:,-1]

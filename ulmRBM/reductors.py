@@ -51,7 +51,7 @@ def greedy_rbm(
         strong: 
             If True, use the true error (and thus compute the fom solutions for all parameters) (strong greedy). If False, use the online efficent error bound (weak greedy). Alternatively, provide the fom solutions to perform a strong greedy, in this case ``stong[i]`` should be the fom solution for ``mu_train[i]``.
         ortho: 
-            If True, orthonormalize the basis after each enrichment. Alternatively, provide a `InnerProduct` or matrix compativle with `ROM:orthonormalize`, to orthonormalize the basis with respect to that product. If an InnerProduct, use it for orthonormalization. Default is True.
+            If True, orthonormalize the basis after each enrichment. Alternatively, provide a `InnerProduct` or matrix compativle with `ROM.orthonormalize`, to orthonormalize the basis with respect to that product. Default is True.
         update_stability:
             Whether to update the stability estimator of the reduced model in each iteration using `StabilityEstimator.update`. This is useful if the stability estimator can not be setup seperately, e.g. using `greedy_constant_estimator`, or if the stability estimator should be enhanced further.
         update_continuity:
@@ -246,15 +246,15 @@ def pod_rbm(
             raise ValueError("POD can not be used with parametric inner products, please provide a parameter-independent inner product.")
     
     if snapshots:
-        snapshots = np.asarray(mu_train)
+        S = np.asarray(mu_train)
     else:
         print(f"{time.time() - start_time:6.1f}s: computing {len(mu_train)} full solutions for POD...")
-        snapshots = np.asarray([fom.solve(mu) for mu in mu_train])
+        S = np.asarray([fom.solve(mu) for mu in mu_train])
         
     N_train = len(mu_train)
     
     print(f"{time.time() - start_time:6.1f}s: computing correlation matrix...")
-    C  = 1/N_train * U.inner(NO_MU, snapshots.T, snapshots.T)
+    C  = 1/N_train * U.inner(NO_MU, S.T, S.T)
     
     print(f"{time.time() - start_time:6.1f}s: solving eigenvalue problem...")
     v, E = eigh(C)
@@ -269,7 +269,7 @@ def pod_rbm(
         n = N
     
     print(f"{time.time() - start_time:6.1f}s: extending rom by {n} basis vectors...")
-    basis = 1/np.sqrt(v[-n:]) * (snapshots.T @ E[:,-n:])
+    basis = 1/np.sqrt(v[-n:]) * (S.T @ E[:,-n:])
     rom.add_basis(basis)
     
     print(f"{time.time() - start_time:6.1f}s: orthonormalizing...")
