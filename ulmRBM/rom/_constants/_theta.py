@@ -10,7 +10,7 @@ from collections.abc import Callable
 import numpy as np
 
 from ulmRBM.core import Mu
-from ulmRBM.fom import FOM, GalerkinFOM
+from ulmRBM.fom import ParametricGalerkinOperator, ParametricOperator
 
 from ._interface import StabilityEstimator, ContinuityEstimator, EfficientConstantEstimator
 
@@ -19,9 +19,9 @@ class _ThetaBase(EfficientConstantEstimator[Mu]):
     r"""
     Min/Max-theta estimator.
     
-    Not applicable to all full-order models, see notes below!
+    Not applicable to all parametric operators, see notes below!
     
-    For a parameter :math:`\mu`, let :math:`\sigma(\mu)` be the parameter-dependent constant of the full-order model (stability or continuity constant). Denote the affine decomposition of the full-order system matrix by :math:`B(\mu) = \sum_{q=1}^Q \theta_q(\mu) B_q` and let :math:`\sigma(\tilde\mu)` be known for some parameter :math:`\tilde\mu`.
+    For a parameter :math:`\mu`, let :math:`\sigma(\mu)` be the parameter-dependent constant of the operator (stability or continuity constant). Denote the affine decomposition of the operator by :math:`B(\mu) = \sum_{q=1}^Q \theta_q(\mu) B_q` and let :math:`\sigma(\tilde\mu)` be known for some parameter :math:`\tilde\mu`.
     Then, for Galerkin problems, we have the lower and upper bounds
     
     .. math::
@@ -34,7 +34,7 @@ class _ThetaBase(EfficientConstantEstimator[Mu]):
         
     To enhance the quality of the bounds, one precomputes :math:`\sigma(\tilde\mu)` for several parameters :math:`\tilde\mu` using :meth:`update` and takes the largest lower bound and the smallest upper bound over these precomputed parameters :math:`\tilde\mu`. 
         
-    These bounds only hold, if the operator :math:`B(\mu)` is affine semi-definite, i.e. if for Galerkin problems it holds for each :math:`q=1,\ldots,Q` that :math:`\theta_q(\mu) > 0` for all :math:`\mu` and :math:`B_q^T + B_q` is positive semi-definite, or :math:`\theta_q(\mu) < 0` for all :math:`\mu` and :math:`B_q^T + B_q` is negative semi-definite while for for Petrov-Galerkin problems it holds for each :math:`p,q=1,\ldots,Q` that :math:`\theta_p(\mu)\theta_q(\mu) > 0` for all :math:`\mu` and :math:`B_p^T V^{-1} B_q + B_q^T V^{-1} B_p` is positive semi-definite, or :math:`\theta_p(\mu)\theta_q(\mu) < 0` for all :math:`\mu` and :math:`B_p^T V^{-1} B_q + B_q^T V^{-1} B_p` is negative semi-definite, where :math:`V` is the test space inner product matrix of the full-order model.
+    These bounds only hold, if the operator :math:`B(\mu)` is affine semi-definite, i.e. if for Galerkin problems it holds for each :math:`q=1,\ldots,Q` that :math:`\theta_q(\mu) > 0` for all :math:`\mu` and :math:`B_q^T + B_q` is positive semi-definite, or :math:`\theta_q(\mu) < 0` for all :math:`\mu` and :math:`B_q^T + B_q` is negative semi-definite while for for Petrov-Galerkin problems it holds for each :math:`p,q=1,\ldots,Q` that :math:`\theta_p(\mu)\theta_q(\mu) > 0` for all :math:`\mu` and :math:`B_p^T V^{-1} B_q + B_q^T V^{-1} B_p` is positive semi-definite, or :math:`\theta_p(\mu)\theta_q(\mu) < 0` for all :math:`\mu` and :math:`B_p^T V^{-1} B_q + B_q^T V^{-1} B_p` is negative semi-definite, where :math:`V` is the test space inner product matrix.
 
     The implementation checks the signs of the affine coefficients, but the
     semi-definiteness of the underlying matrices must be guaranteed by the user.
@@ -45,7 +45,7 @@ class _ThetaBase(EfficientConstantEstimator[Mu]):
     _positive_theta: bool | None = None
     
     def _initialize(self):
-        if self.fom.U.is_parametric or self.fom.V.is_parametric:
+        if self.B.U.is_parametric or self.B.V.is_parametric:
             raise ValueError("Min/Max-Theta does not support parametric inner products. This could be extended to affine products, but was not done yet.")
         self._sigmas = None
         self._thetas = None
@@ -63,7 +63,7 @@ class _ThetaBase(EfficientConstantEstimator[Mu]):
             raise RuntimeError("No precomputed constants available. Call 'update' method at least once.")
         theta = self._eval_theta(mu)
         max = np.max(theta.T / self._thetas.T, axis=0)
-        if not isinstance(self.fom, GalerkinFOM): max = np.sqrt(max)
+        if not isinstance(self.B, ParametricGalerkinOperator): max = np.sqrt(max)
         return np.min(self._sigmas * max)
     
     def lower_bound(self, mu: Mu):
@@ -71,13 +71,13 @@ class _ThetaBase(EfficientConstantEstimator[Mu]):
             raise RuntimeError("No precomputed constants available. Call 'update' method at least once.")
         theta = self._eval_theta(mu)
         min = np.min(theta.T / self._thetas.T, axis=0)
-        if not isinstance(self.fom, GalerkinFOM): min = np.sqrt(min)
+        if not isinstance(self.B, ParametricGalerkinOperator): min = np.sqrt(min)
         return np.max(self._sigmas * min)
     
     def _eval_theta(self, mu: Mu) -> np.ndarray:
-        theta = np.array([theta(mu) for theta in self.fom.B.theta])
+        theta = np.array([theta(mu) for theta in self.B.B.theta])
         
-        if not isinstance(self.fom, GalerkinFOM):
+        if not isinstance(self.B, ParametricGalerkinOperator):
             theta = np.outer(theta, theta)
             theta += np.triu(theta, k=1).T
             theta = theta[np.tril_indices(theta.shape[0])]
@@ -93,8 +93,8 @@ class _ThetaBase(EfficientConstantEstimator[Mu]):
     
 class ThetaStability(_ThetaBase[Mu], StabilityEstimator[Mu]):
     __doc__ = _ThetaBase.__doc__
-    _get_exact_constant = lambda self, mu: self.fom.stability(mu)
+    _get_exact_constant = lambda self, mu: self.B.stability(mu)
         
 class ThetaContinuity(_ThetaBase[Mu], ContinuityEstimator[Mu]):
     __doc__ = _ThetaBase.__doc__
-    _get_exact_constant = lambda self, mu: self.fom.continuity(mu)
+    _get_exact_constant = lambda self, mu: self.B.continuity(mu)

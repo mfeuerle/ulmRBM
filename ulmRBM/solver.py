@@ -107,7 +107,32 @@ class DirectSolver(Solver):
     For overdetermined systems, uses :func:`numpy.linalg.lstsq` for dense and sparse, as there is no direct sparse least-squares solver.
     """
     
+    _A = None
+    _solveA = None
+    
+    def __init__(self, factorize: bool = False):
+        self.factorize = factorize
+    
     def __call__(self, A: np.ndarray | sp.sparse.sparray, b: Vector, x0: Vector = None) -> Vector:
+        if self.factorize:
+            if self._A is A:
+                return self._solveA(b)
+            else:
+                self._A = A
+                if sp.sparse.issparse(A):
+                    if A.shape[0] != A.shape[1]:
+                        from warnings import warn
+                        warn("no sparse factorization for rectangular matrices; converting to dense", sp.sparse.SparseEfficiencyWarning)
+                        A = A.toarray()
+                    else:
+                        self._solveA = sp.sparse.linalg.factorized(A)
+                if isinstance(A, np.ndarray):
+                    Q, R = np.linalg.qr(A, mode='reduced')
+                    self._solveA = lambda b: sp.linalg.solve_triangular(R, Q.T @ b, lower=False)
+                else:
+                    raise TypeError("Matrix A must be a NumPy array or SciPy sparse array.")
+                return self._solveA(b)
+        
         if sp.sparse.issparse(A):
             A = A.tocsc()
             if A.shape[0] == A.shape[1]:

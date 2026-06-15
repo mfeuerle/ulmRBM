@@ -1,21 +1,13 @@
 """
-Full-Order Model (FOM) classes.
-
-Classes
--------
-.. autosummary::
-   :toctree: generated/
-   
-    FOM
-    GalerkinFOM
+Parametric operators with associated trial and test spaces.
 """
 
 from __future__ import annotations
 
 
 __all__ = [
-    'FOM',
-    'GalerkinFOM',
+    'ParametricOperator',
+    'ParametricGalerkinOperator',
 ]
 
 from collections.abc import Callable
@@ -23,7 +15,6 @@ from typing import Generic
 
 import numpy as np
 from scipy.linalg import eigh
-from scipy.sparse import issparse
 from scipy.sparse.linalg import eigsh, LinearOperator, aslinearoperator, onenormest
 
 from ulmRBM.core import (
@@ -34,54 +25,36 @@ from ulmRBM.affine import AffineLinear, wrap_affinelinear
 from ulmRBM.products import InnerProduct, OperatorInnerProduct
 
 
-class FOM(Generic[Mu]):
+
+class ParametricOperator(Generic[Mu]):
     r"""
-    Full-order Petrov-Galerkin model given by a parametric linear system of equations.
+    Affine Petrov-Galerkin Operator :math:`B(\mu) : U \to V'`.
     
-    .. math::
-        B(\mu) u(\mu) = f(\mu)
-        
-    with an optional output of interest functional
-    
-    .. math::
-        s(\mu) = l(\mu) u(\mu),
-    
-    where :math:`B(\mu) \in \mathbb{R}^{m \times n}` is the system matrix, :math:`f(\mu) \in \mathbb{R}^{m}` is the right-hand side and :math:`l(\mu) \in \mathbb{R}^{p \times n}` is the output of interest functional, all with affine parameter dependence, and :math:`u(\mu) \in \mathbb{R}^n` is the unknown solution vector and :math:`s(\mu)\in \mathbb{R}^p` the optional output of interest. 
-    
-    Typically, :math:`B(\mu)` is a discretization of a parametric operator :math:`B_\mu : U \to V'`, :math:`f(\mu)` a discretization of a parametric functional :math:`f_\mu \in V'`, and thus :math:`u(\mu)` is a discrete approximation of the solution :math:`u_\mu \in U` of the parametric operator equation :math:`B_\mu u_\mu = f_\mu` in :math:`V'`. Thereby, :math:`U` and :math:`V` denote the trial and test spaces, equipped with (possibly parameter dependent) inner products :math:`(\cdot, \cdot)_U` and :math:`(\cdot, \cdot)_V`, respectively.
+    For two spaces :math:`U` and :math:`V` of dimension :math:`n` and :math:`m` and (possibly parameter-dependent) inner products :math:`(\cdot, \cdot)_U` and :math:`(\cdot, \cdot)_V`, the operator :math:`B(\mu)` is matrix of shape :math:`(m, n)`, which is affine with respect to the parameter :math:`\mu`.
     """
     
-    dim: tuple[int, int, int | None]
-    r"""Dimensions :math:`(m,n,p)` of the system matrix :math:`B(\mu)` and output :math:`s(\mu)`, where :math:`m` is the discrete test space dimension, :math:`n` is the discrete trial space dimension, and :math:`p` is the output dimension. If no output of interest is given, :math:`p` is ``None``."""
+    shape: tuple[int, int]
+    r"""``(m, n)``, shape of the operator matrix :math:`B(\mu)`."""
     
     B: AffineLinear[Mu, Matrix]
-    r"""Affine decomposition of the system matrix :math:`B(\mu) = \sum_{q=1}^Q \theta_q^B(\mu) B_q`."""
-    
-    f: AffineLinear[Mu, Vector]
-    r"""Affine decomposition of the right-hand side :math:`f(\mu) = \sum_{q=1}^{Q_f} \theta_q^f(\mu) f_q`."""
-    
-    l: AffineLinear[Mu, Matrix] | None
-    r"""Affine decomposition of the output(s) of interest functional, if any :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`."""
+    r"""Affine decomposition of the operator matrix :math:`B(\mu) = \sum_{q=1}^Q \theta_q^B(\mu) B_q`."""
         
     U: InnerProduct[Mu]
     r"""Inner product :math:`(\cdot, \cdot)_U` on the trial space :math:`U`."""
     
     V: InnerProduct[Mu]
     r"""Inner product :math:`(\cdot, \cdot)_V` on the test space :math:`V`."""
-    
-    __solver: Solver
-    r"""Solver for the linear system :math:`B(\mu) u = f(\mu)`."""
-    
-    _stability_solver: Callable[[Mu, FOM[Mu]],float] | str
+        
+    _stability_solver: Callable[[Mu, ParametricOperator[Mu]],float] | str
     """Optional explicit function to compute the stability constant, bypassing the default eigenvalue-based computation."""
 
-    _continuity_solver: Callable[[Mu, FOM[Mu]],float] | str
+    _continuity_solver: Callable[[Mu, ParametricOperator[Mu]],float] | str
     """Optional explicit function to compute the continuity constant, bypassing the default eigenvalue-based computation."""
     
     _take_square_root_eigenvalues: bool = True
     """needed for the Petrov-Galerkin and Galerkin cases"""
     
-    _supremizer_func: Callable[[Vector, FOM[Mu]], AffineLinear[Mu, Vector]] | None = None
+    _supremizer_func: Callable[[Vector, ParametricOperator[Mu]], AffineLinear[Mu, Vector]] | None = None
     r"""Internal storage if a custom supremizer function is provided."""
     
     _eigsh_options_stability: dict = {
@@ -91,7 +64,7 @@ class FOM(Generic[Mu]):
         'tol': 1e-10,
         'rng': None
     }
-    r"""Options for the eigenvalue solver used in the default sparse stability constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``fom._eigsh_options['tol'] = 1e-8``."""
+    r"""Options for the eigenvalue solver used in the default sparse stability constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``op._eigsh_options['tol'] = 1e-8``."""
     
     _eigsh_options_continuity: dict = {
         'v0': None,
@@ -100,66 +73,48 @@ class FOM(Generic[Mu]):
         'tol': 1e-10,
         'rng': None
     }
-    r"""Options for the eigenvalue solver used in the default sparse continuity constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``fom._eigsh_options['tol'] = 1e-8``."""
+    r"""Options for the eigenvalue solver used in the default sparse continuity constant computations. If neccessary, these can be updated by the user after initialization, e.g. ``op._eigsh_options['tol'] = 1e-8``."""
     
     @property
-    def dim(self):
-        p = self.l.shape[0] if self.l is not None else None
-        return (*self.B.shape,p)
-    
-    @property
-    def _solver(self) -> Solver:
-        return self.__solver
-    @_solver.setter
-    def _solver(self, solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector]):
-        self.__solver = wrap_solver(solver)
+    def shape(self):
+        return self.B.shape
     
     
     def __init__(self,
                  B: AffineLinear[Mu, Matrix] | Matrix,
-                 f: AffineLinear[Mu, Vector] | Vector,
                  U: InnerProduct[Mu],
                  V: InnerProduct[Mu],
-                 l: AffineLinear[Mu, Matrix] | Matrix | None = None,
-                 stability: Callable[[Mu, FOM[Mu]], float] | float | str = 'iterative',
-                 continuity: Callable[[Mu, FOM[Mu]], float] | float | str = 'iterative',
-                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = IterativeSolver(),
-                 supremizer: Callable[[Vector, FOM[Mu]], ParametricLinear[Mu, Vector]] = None):
+                 stability:  Callable[[Mu, ParametricOperator[Mu]], float] | float | str = None,
+                 continuity: Callable[[Mu, ParametricOperator[Mu]], float] | float | str = None,
+                 supremizer: Callable[[Vector, ParametricOperator[Mu]], ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]] = None):
         r"""
         Args:
             B:
-                Affine decomposition of the system matrix.
-            f:
-                Affine decomposition of the right-hand side.
+                Affine decomposition of the operator matrix.
             U:
                 Inner product on the trial space.
             V:
                 Inner product on the test space.
-            l:
-                Optional affine decomposition of the output(s) of interest functional.
             stability:
-                Parameter how the stability constant is computed. Might take the values ``'iterative'`` (default), ``'direct'``, ``'estimate'``, a scalar number ``s`` or a custom callable with signature ``s,x = stability(mu, fom)`` or ``s = stability(mu, fom)``.
+                Parameter how the stability constant is computed. Might take the values ``'iterative'`` (default), ``'direct'``, ``'estimate'``, a scalar number ``s`` or a custom callable with signature ``s,x = stability(mu, op)`` or ``s = stability(mu, op)``.  Defaults to ``'iterative'``.
                 
-                If set to ``'iterative'``, the stability constant is computed via the iterative solver `scipy.sparse.linalg.eigsh` (you might tweak its options by changing ``fom._eigsh_options_stability``). If set to ``'direct'``, the stability constant is computed via the dense solver `scipy.linalg.eigvals`. If set to ``'estimate'``, the stability  constant is estimated by the lower bound :math:`\sqrt{1/\|A^{-1}M\|_1}` using `scipy.sparse.linalg.onenormest`.
+                If set to ``'iterative'``, the stability constant is computed via the iterative solver `scipy.sparse.linalg.eigsh` (you might tweak its options by changing ``op._eigsh_options_stability``). If set to ``'direct'``, the stability constant is computed via the dense solver `scipy.linalg.eigvals`. If set to ``'estimate'``, the stability  constant is estimated by the lower bound :math:`\sqrt{1/\|A^{-1}M\|_1}` using `scipy.sparse.linalg.onenormest`.
                 
                 Explanation to the values ``s`` and ``x``:
-                Consider the generalized eigenvalue problem :math:`A x = \lambda M x`, with :math:`A := B(\mu)^T V(\mu)^{-1} B(\mu)` and :math:`M := U(\mu)`, with the system matrix :math:`B(\mu)` and the inner product matrices :math:`U(\mu)` and :math:`V(\mu)` on trial and test space respectively. The stability constant is then given by squareroot of the smallest eigenvalue. Thus, ``s`` is :math:`\sqrt{\lambda_{\text{min}}}` and ``x`` the corresponding eigenvector.
+                Consider the generalized eigenvalue problem :math:`A x = \lambda M x`, with :math:`A := B(\mu)^T V(\mu)^{-1} B(\mu)` and :math:`M := U(\mu)`, with the operator matrix :math:`B(\mu)` and the inner product matrices :math:`U(\mu)` and :math:`V(\mu)` on trial and test space respectively. The stability constant is then given by squareroot of the smallest eigenvalue. Thus, ``s`` is :math:`\sqrt{\lambda_{\text{min}}}` and ``x`` the corresponding eigenvector.
             continuity:
-                See the description of the ``stability`` parameter, with the only difference, that the continuity constant is given by the squareroot of the largest eigenvalue instead of the smallest. Thus, if ``'estimate'`` is selected, the continuity constant is estimated by the upper bound :math:`\sqrt{\|M^{-1}A\|_1}`.  If ``'iterative'`` was selected, you might tweak the options of the underlying eigenvalue solver by changing ``fom._eigsh_options_continuity``.
-            solver:
-                Solver for the linear system. Defaults to a iterative solver.
+                See the description of the ``stability`` parameter, with the only difference, that the continuity constant is given by the squareroot of the largest eigenvalue instead of the smallest. Thus, if ``'estimate'`` is selected, the continuity constant is estimated by the upper bound :math:`\sqrt{\|M^{-1}A\|_1}`.  If ``'iterative'`` was selected, you might tweak the options of the underlying eigenvalue solver by changing ``op._eigsh_options_continuity``.
             supremizer:
                 Custom function for the supremizing operator. If ``None``, a default implementation is used. See :meth:`supremizer`.
         """
         
-        if B.shape[0] != f.shape[0]:
-            raise ValueError("B and f must have compatible dimensions.")
+        if stability is None: stability = 'iterative'
+        if continuity is None: continuity = 'iterative'
+        
         if B.shape[1] != U.shape[0]:
             raise ValueError("B and U must have compatible dimensions.")
         if B.shape[0] != V.shape[0]:
                 raise ValueError("B and V must have compatible dimensions.")
-        if l is not None and l.shape[1] != U.shape[0]:
-            raise ValueError("l and U must have compatible dimensions.")
         
         if isinstance(stability, str):
             if stability not in ['direct', 'iterative', 'estimate']:
@@ -173,13 +128,9 @@ class FOM(Generic[Mu]):
         else:
             continuity = wrap_scalar(continuity)
             
-        
         self.B = wrap_affinelinear(B).compress()
-        self.f = wrap_affinelinear(f).compress()
-        self.l = wrap_affinelinear(l).compress() if l is not None else None
         self.U = U
         self.V = V
-        self._solver = solver
         self._stability_solver = stability
         self._continuity_solver = continuity
         self._supremizer_func = supremizer
@@ -187,22 +138,24 @@ class FOM(Generic[Mu]):
         self._eigsh_options_continuity = self._eigsh_options_continuity.copy()
         
     def __repr__(self):
-        shape = f"({self.dim[0]}, {self.dim[1]}"
-        if self.dim[2] is not None: shape += f", {self.dim[2]}"
+        shape = f"({self.shape[0]}"
+        for s in self.shape[1:]: 
+            if s is None: s = 0
+            shape += f", {s}"
         shape += ")"
-        return f"<{self.__class__.__name__} of dimension {shape}>"
+        return f"<{self.__class__.__name__} of shape {shape}>"
     
     
     def stability(self, mu: Mu, eigenvector: bool = False) -> float:
         r"""
         Compute the stability constant at parameter value :math:`\mu`. 
         
-        For Galerkin models, this is the coercivity constant:
+        For Galerkin operators, this is the coercivity constant:
         
         .. math::
             \beta(\mu) = \inf_{u \in U} \frac{| \langle B(\mu) u, u \rangle_{U'\times U} |}{\|u\|_U^2}
             
-        For Petrov-Galerkin models, this is the inf-sup constant:
+        For Petrov-Galerkin operators, this is the inf-sup constant:
         
         .. math::
             \beta(\mu) = \inf_{u \in U} \sup_{v\in V} \frac{| \langle B(\mu) u, v \rangle_{V'\times V} |}{\|u\|_U \|v\|_V}
@@ -263,7 +216,7 @@ class FOM(Generic[Mu]):
         Args:
             mu:
                 Parameter value at which to compute the continuity constant.
-        eigenvector:
+            eigenvector:
                 Whether to also return the corresponding eigenvector of the underlying eigenvalue problem defining the continuity constant.
                 
         Returns:
@@ -383,50 +336,15 @@ class FOM(Generic[Mu]):
             val = np.sqrt(val)
         return val
     
-        
-    def solve(self, mu: Mu, u0=None) -> Vector:
-        r"""
-        Solve the parametric system :math:`B(\mu) u = f(\mu)` for the given parameter value.
-        
-        Args:
-            mu:
-                Parameter value at which to solve the system.
-            u0:
-                Optional initial guess for iterative solvers.
-        
-        Returns:
-            State vector :math:`u(\mu) \in \mathbb{R}^n`.
-        """
-        return self._solver(self.B(mu), self.f(mu), u0)
-    
-    def output(self, mu: Mu, u: Vector | None = None) -> Vector:
-        r"""
-        Compute the output of interest :math:`s(\mu) = l(\mu) u(\mu)` at the given parameter value.
-        
-        Args:
-            mu:
-                Parameter value at which to compute the output.
-            u:
-                Optional state vector to use instead of solving for :math:`u(\mu)`. If ``None``, the state is computed via :meth:`solve`.
-        
-        Returns:
-            Output of interest :math:`s(\mu) \in \mathbb{R}^p`.
-        """
-        if self.l is None:
-            raise ValueError("No output functional defined for this model.")
-        if u is None: u = self.solve(mu)
-        return self.l(mu) @ u
-    
-    
     def supremizer(self, u: Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
         r"""
-        Application of the supremizing operator to given trial vector(s).
+        Application of the supremizing operator to given vector(s).
         
         The supremizing operator :math:`S(\mu): U \to V` is the unique isomorphic operator given by
-        :math:`S(\mu) := R_V^{-1} B(\mu)` where :math:`R_V : V \to V'` is the Riesz map of the test space.
+        :math:`S(\mu) := R_V^{-1} B(\mu)` where :math:`R_V : V \to V'` is the Riesz map of :math:`V`.
         This function returns for given :math:`u` the result :math:`S(\mu) u` as a function in :math:`\mu`.
         
-        If a custom supremizer function was provided during initialization, it is used. Otherwise, the supremizer is constructed from the system matrix and test space inner product. Thereby, if the test space inner product is parameter-independent, the supremizer :math:`S(\mu)` is affine with respect to :math:`\mu` and the result is an `AffineLinear`. Otherweise, a parameter-dependend function with no additional structure is resturned.
+        If a custom supremizer function was provided during initialization, it is used. Otherwise, the supremizer is constructed from the system matrix and test space inner product. Thereby, if the test space inner product is parameter-independent, the supremizer :math:`S(\mu)` is affine with respect to :math:`\mu` and the result is an `AffineLinear`. Otherweise, a parameter-dependend function with no additional structure is returned.
         
         Args:
             u:
@@ -437,21 +355,18 @@ class FOM(Generic[Mu]):
         if self._supremizer_func is not None:
             return self._supremizer_func(u, self)
         else:
-            return self._supremizer(u)
+            if self.V.is_parametric:
+                return lambda mu: self.V.dual(mu) @ (self.B(mu) @ wrap_affinelinear(u)(mu))
+            else:
+                return self.V.dual(NO_MU) @ (self.B @ u)
         
-    
-    def _supremizer(self, u: AffineLinear[Mu, Vector] | Vector) -> ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]:
-        if self.V.is_parametric:
-            return lambda mu: self.V.dual(mu) @ (self.B(mu) @ wrap_affinelinear(u)(mu))
-        else:
-            return self.V.dual(NO_MU) @ (self.B @ u)
         
-
-class GalerkinFOM(FOM[Mu]):
+        
+class ParametricGalerkinOperator(ParametricOperator[Mu]):
     r"""
-    Full-order Galerkin problem.
+    Affine Galerkin Operator :math:`B(\mu) : U \to U'`.
     
-    Galerkin problems are a special case of Petrov-Galerkin problems, see :class:`FOM` for documentation, where the trial and test spaces coincide, i.e. it holds :math:`U = V` and :math:`m = n`.
+    This is a special case of the more general :class:`ParametricOperator`, where the trial and test space coincide, i.e. :math:`U = V` and :math:`m = n`.
     """
     
     _take_square_root_eigenvalues = False
@@ -462,41 +377,33 @@ class GalerkinFOM(FOM[Mu]):
     @V.setter
     def V(self, value: InnerProduct[Mu] | None):
         if value not in (self.U, None):
-            raise AttributeError("Cannot set V for Galerkin models, as U and V are identical.")
+            raise AttributeError("Cannot set V to something else the U for Galerkin models, as U=V.")
     
     def __init__(self,
                  B: AffineLinear[Mu, Matrix] | Matrix,
-                 f: AffineLinear[Mu, Vector] | Vector, 
                  U: InnerProduct[Mu],
-                 l: AffineLinear[Mu, Matrix] | Matrix | None = None,
-                 stability: Callable[[Mu],float] | float | str = 'iterative',
-                 continuity: Callable[[Mu],float] | float | str = 'iterative',
-                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = IterativeSolver()):
+                 stability:  Callable[[Mu, ParametricGalerkinOperator[Mu]], float] | float | str = None,
+                 continuity: Callable[[Mu, ParametricGalerkinOperator[Mu]], float] | float | str = None,
+                 supremizer: Callable[[Vector, ParametricGalerkinOperator[Mu]], ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]] = None):
         r"""
         Args:
             B:
-                Affine decomposition of the system matrix.
-            f:
-                Affine decomposition of the right-hand side.
+                Affine decomposition of the operator matrix.
             U:
                 Inner product on the trial space.
-            l:
-                Optional affine decomposition of the output(s) of interest functional.
             stability:
-                Parameter how the stability constant is computed. Might take the values ``'iterative'`` (default), ``'direct'``, ``'estimate'``, a scalar number ``s`` or a custom callable with signature ``s,x = stability(mu, fom)`` or ``s = stability(mu, fom)``.
+                Parameter how the stability constant is computed. Might take the values ``'iterative'`` (default), ``'direct'``, ``'estimate'``, a scalar number ``s`` or a custom callable with signature ``s,x = stability(mu, op)`` or ``s = stability(mu, op)``. Defaults to ``'iterative'``.
                 
-                If set to ``'iterative'``, the stability constant is computed via the iterative solver `scipy.sparse.linalg.eigsh` (you might tweak its options by changing ``fom._eigsh_options_stability``). If set to ``'direct'``, the stability constant is computed via the dense solver `scipy.linalg.eigvals`. If set to ``'estimate'``, the stability  constant is estimated by the lower bound :math:`1/\|A^{-1}M\|_1` using `scipy.sparse.linalg.onenormest`.
+                If set to ``'iterative'``, the stability constant is computed via the iterative solver `scipy.sparse.linalg.eigsh` (you might tweak its options by changing ``op._eigsh_options_stability``). If set to ``'direct'``, the stability constant is computed via the dense solver `scipy.linalg.eigvals`. If set to ``'estimate'``, the stability  constant is estimated by the lower bound :math:`1/\|A^{-1}M\|_1` using `scipy.sparse.linalg.onenormest`.
                 
                 Explanation to the values ``s`` and ``x``:
-                Consider the generalized eigenvalue problem :math:`A x = \lambda M x`, with :math:`A := 0.5 (B(\mu)^T + B(\mu))` and :math:`M := U(\mu)`, with the system matrix :math:`B(\mu)` and the inner product matrices :math:`U(\mu)` on the trial space. The stability constant is then given by the smallest eigenvalue. Thus, ``s`` is :math:`\lambda_{\text{min}}` and ``x`` the corresponding eigenvector.
+                Consider the generalized eigenvalue problem :math:`A x = \lambda M x`, with :math:`A := 0.5 (B(\mu)^T + B(\mu))` and :math:`M := U(\mu)`, with the operator matrix :math:`B(\mu)` and the inner product matrix :math:`U(\mu)` on the trial space. The stability constant is then given by the smallest eigenvalue. Thus, ``s`` is :math:`\lambda_{\text{min}}` and ``x`` the corresponding eigenvector.
             continuity:
-                See the description of the ``stability`` parameter, with the only difference, that the continuity constant is given by the largest eigenvalue instead of the smallest. Thus, if ``'estimate'`` is selected, the continuity constant is estimated by the upper bound :math:`\|M^{-1}A\|_1`.  If ``'iterative'`` was selected, you might tweak the options of the underlying eigenvalue solver by changing ``fom._eigsh_options_continuity``.
-            solver:
-                Solver for the linear system. Defaults to a iterative solver.
+                See the description of the ``stability`` parameter, with the only difference, that the continuity constant is given by the largest eigenvalue instead of the smallest. Thus, if ``'estimate'`` is selected, the continuity constant is estimated by the upper bound :math:`\|M^{-1}A\|_1`.  If ``'iterative'`` was selected, you might tweak the options of the underlying eigenvalue solver by changing ``op._eigsh_options_continuity``.
             supremizer:
-                Custom function for the supremizing operator. If ``None``, a default implementation is used. See :meth:`supremizer`.
+                Custom function for the supremizing operator. If ``None``, a default implementation is used. See :meth:`supremizer`. For Galerkin models, the supremizer is normally not needed.
         """
-        super().__init__(B, f, U, U, l, stability, continuity, solver)
+        super().__init__(B, U, U, stability, continuity, supremizer)
     
     def _get_eigenvalue_operators(self, mu: Mu):
         B = self.B(mu)

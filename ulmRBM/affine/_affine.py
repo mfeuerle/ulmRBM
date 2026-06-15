@@ -12,6 +12,7 @@ __all__ = [
     'AffineFunction',
     'wrap_affinelinear',
     'ScalarComponentList',
+    'multiply_theta',
 ]
 
 from numbers import Number
@@ -33,8 +34,9 @@ class _ScaledScalar(ParametricObject[Mu, float]):
     def __call__(self, mu: Mu) -> float:
         return self.scale * self.scalar(mu)
     
-def _multiply_scalar(scalar1: ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu] | float,
+def multiply_theta(scalar1: ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu] | float,
                      scalar2: ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu] | float) -> ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu]:
+    r"""Multiply two """
     
     scalar1 = unwrap(scalar1)
     scalar2 = unwrap(scalar2)
@@ -365,7 +367,7 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
             
         neg_theta = []
         for theta_i in self.theta:
-            neg_theta.append(_multiply_scalar(-1.0, theta_i))
+            neg_theta.append(multiply_theta(-1.0, theta_i))
         return self._construct_new(neg_theta, self.data)
     
     def __sub__(self, other: AffineObject[Mu, Data] | Iterable[tuple[ParametricObject[Mu, float], Data]]):    # self - other
@@ -451,7 +453,22 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         18.0
         """
         new_data = [func(d) for d in self.data]
-        return self._construct_new(self.theta, new_data, _ConstructNew.APPLY2DATA)    
+        return self._construct_new(self.theta, new_data, _ConstructNew.APPLY2DATA)
+    
+    def apply2theta[Mu2](self, func: Callable[[ParametricObject[Mu, float]], ParametricObject[Mu2, float]]) -> AffineObject[Mu2, Data]:
+        r"""
+        Apply a function to each theta term in the decomposition and return
+        a new affine object with the transformed theta but same data.
+        
+        Args:
+            func :
+                Function to apply to each theta term.
+        
+        Returns:
+            A new `AffineObject` with the transformed theta terms.
+        """
+        new_theta = [func(t) for t in self.theta]
+        return self._construct_new(new_theta, self.data, _ConstructNew.SAME)   
 
     
 
@@ -564,7 +581,7 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
             new_data = []
             for theta_i, data_i in self:
                 for theta_j, data_j in other:
-                    new_theta.append(_multiply_scalar(theta_i, theta_j))
+                    new_theta.append(multiply_theta(theta_i, theta_j))
                     new_data.append(data_i * data_j)
             return self._construct_new(new_theta, new_data, _ConstructNew.MUL)
         else:
@@ -636,7 +653,7 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
             new_data = []
             for theta_i, data_i in self:
                 for theta_j, data_j in other:
-                    new_theta.append(_multiply_scalar(theta_i, theta_j))
+                    new_theta.append(multiply_theta(theta_i, theta_j))
                     new_data.append(data_i @ data_j)
             return self._construct_new(new_theta, new_data, _ConstructNew.MATMUL)
         else:

@@ -6,6 +6,9 @@ __all__ = [
     'ResidualNormEvaluator',
     'FullResidualNormEvaluator',
     'AffineResidualNormEvaluator',
+    'TimeSteppingResidualNormEvaluator',
+    'FullTimeSteppingResidualNormEvaluator',
+    'AffineTimeSteppingResidualNormEvaluator',
 ]
 
 from abc import abstractmethod
@@ -15,9 +18,10 @@ import numpy as np
 
 from ulmRBM.core import NO_MU, Mu, Vector
 from ulmRBM.affine import AffineLinear
+from ulmRBM.fom import TimeSteppingSolution
 
 if TYPE_CHECKING:
-    from ulmRBM.rom import ROM
+    from ulmRBM.rom import ROM, StationaryTimeSteppingGalerkinROM
 
 
 class ResidualNormEvaluator(Generic[Mu]):
@@ -54,7 +58,7 @@ class ResidualNormEvaluator(Generic[Mu]):
         """
         pass
         
-    def add_basis(self, basis: AffineLinear[Mu, Vector]):
+    def add_basis(self, basis: Vector):
         r"""
         Extend the reduced trial basis :math:`U_{\text{basis}}`.
         """
@@ -143,8 +147,8 @@ class AffineResidualNormEvaluator(ResidualNormEvaluator[Mu]):
         self._r = self.rom.fom.V.dual.riesz(NO_MU, np.column_stack(self.rom.fom.f.data))
         self._R = self.rom.fom.V.inner(NO_MU, self._r)
         
-    def add_basis(self, basis: AffineLinear[Mu, Vector]):
-        m = self.rom.fom.dim[0]
+    def add_basis(self, basis: Vector):
+        m = self.rom.fom.shape[0]
         r_new = np.empty((m, basis.shape[1], self._QB))
         for q, (theta_q, Bq_basis) in enumerate(self.rom.fom.B @ basis):
             r_new[:,:,q] = self.rom.fom.V.dual.riesz(NO_MU, Bq_basis)
@@ -175,3 +179,90 @@ class AffineResidualNormEvaluator(ResidualNormEvaluator[Mu]):
         theta_f = self._theta_r(mu, None)
         return np.sqrt(abs(theta_f.T @ self._R[:self._Qf, :self._Qf] @ theta_f))
     
+    
+    
+    
+    
+class TimeSteppingResidualNormEvaluator(Generic[Mu]):
+    r"""
+    Base class for computing the dual norm of the full-order residual of a :class:`StationaryTimeSteppingGalerkinROM`.
+    """
+    
+    online_efficient: bool
+    r"""Whether the residual norm evaluator provides online-efficient computation of the dual norm of the residual."""
+    
+    rom: StationaryTimeSteppingGalerkinROM[Mu]
+    r"""The reduced-order model for which the residual is evaluated."""
+    
+    def __init__(self, rom: StationaryTimeSteppingGalerkinROM[Mu]):
+        self.rom = rom
+        self._initialize()
+        if rom.U_basis is not None: self.add_basis(rom.U_basis)
+        
+    def _initialize(self):
+        r"""
+        Setup the the norm evaluater.
+        """
+        pass
+        
+    def add_basis(self, basis: Vector):
+        r"""
+        Extend the reduced trial basis :math:`U_{\text{basis}}`.
+        """
+        pass
+    
+    def rotate_basis(self, rotation: np.ndarray):
+        r"""
+        Rotate the reduced trial basis :math:`U_{\text{basis}}`, i.e. replace :math:`U_{\text{basis}}` by :math:`U_{\text{basis}} \cdot \text{rotation}`.
+        """
+        pass
+        
+    @abstractmethod
+    def dual_norm(self, mu: Mu, u: TimeSteppingSolution) -> float:
+        r"""
+        Compute the dual norm of the residual at parameter :math:`\mu` for the reduced solution :math:`u`.
+        """
+        ...
+    
+    @abstractmethod    
+    def initial_error(self, mu: Mu, u: TimeSteppingSolution) -> float:
+        r"""
+        Compute the error of the initial value.
+        """
+        ...
+    
+    def __repr__(self):
+        return f"<{self.__class__.__name__} for {repr(self.rom)}>"
+    
+    
+
+class FullTimeSteppingResidualNormEvaluator(TimeSteppingResidualNormEvaluator[Mu]):
+    """Default implementation that delegates all computations to the full-order model. This is not online-efficient.
+    """
+    
+    online_efficient = False
+    
+    def dual_norm(self, mu: Mu, u: TimeSteppingSolution) -> float:
+        u = self.rom.resconstruct(u).u
+        K = self.rom.fom.K
+        LIu = self.rom.fom.LI.B(mu) @ u[:,1:K+1]
+        LEu = self.rom.fom.LE.B(mu) @ u[:,0:K]
+        b = self.rom.fom.b(mu)
+        r = LEu + b - LIu
+        return self.rom.fom.W.dual.norm(mu, r)
+    
+    def initial_error(self, mu: Mu, u: TimeSteppingSolution) -> float:
+        u0 = self.rom.resconstruct(u).u[:,0]
+        return self.rom.fom.W.norm(mu, u0 - self.rom.fom.u0(mu))
+        
+        
+    
+    
+class AffineTimeSteppingResidualNormEvaluator(TimeSteppingResidualNormEvaluator[Mu]):
+    """Exploiting the affine structure of the full-order model for online-efficient residual norm evaluation. Only applicable for FOMs with parameter-independent test space inner product.
+    """
+    
+    online_efficient = True
+    
+    def _initialize(self):
+        raise NotImplementedError("Affine time-stepping residual norm evaluation is not implemented yet.")

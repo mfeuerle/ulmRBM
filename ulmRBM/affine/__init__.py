@@ -23,6 +23,7 @@ Utilities
     :toctree: generated/
     
     wrap_affinelinear
+    multiply_theta
     ScalarComponentList
 """
 

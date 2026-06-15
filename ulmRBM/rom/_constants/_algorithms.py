@@ -64,8 +64,7 @@ def greedy_constant_estimator(
         Array of selected parameter indices, i.e. ``mu_train[idx]`` gives the selected parameter values.
     """
     
-    
-    print(f"Starting greedy for {"stability" if isinstance(estimator, StabilityEstimator) else "continuity"} estimator")
+    print(f"Starting greedy for {estimator.__class__.__name__} estimator")
     start_time = time.time()
     
     mu_train = np.array(mu_train)

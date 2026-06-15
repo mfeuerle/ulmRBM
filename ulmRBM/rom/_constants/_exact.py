@@ -36,11 +36,11 @@ class ExactStability(_ExactEstimator[Mu], StabilityEstimator[Mu]):
     
     The stability constat estimator :math:`\hat\sigma(\mu)` is given by the exact stability constant of the full-order model.
     
-    The estimator is online-efficient if the exact stability constant of the `FOM` can be evaluated fast via custom functions (e.g. if the constants are known analytically).
+    The estimator is online-efficient if the exact stability constant of the `ParametricOperator` can be evaluated fast via custom functions (e.g. if the constants are known analytically).
     """
     
     def __call__(self, mu: Mu) -> float:
-        return self.fom.stability(mu)
+        return self.B.stability(mu)
     
 class ExactContinuity(_ExactEstimator[Mu], ContinuityEstimator[Mu]):
     r"""
@@ -48,8 +48,8 @@ class ExactContinuity(_ExactEstimator[Mu], ContinuityEstimator[Mu]):
     
     The continuity constat estimator :math:`\hat\sigma(\mu)` is given by the exact continuity constant of the full-order model.
     
-    The estimator is online-efficient if the exact continuity constant of the `FOM` can be evaluated fast via custom functions (e.g. if the constants are known analytically).
+    The estimator is online-efficient if the exact continuity constant of the `ParametricOperator` can be evaluated fast via custom functions (e.g. if the constants are known analytically).
     """
     
     def __call__(self, mu: Mu) -> float:
-        return self.fom.continuity(mu)
+        return self.B.continuity(mu)

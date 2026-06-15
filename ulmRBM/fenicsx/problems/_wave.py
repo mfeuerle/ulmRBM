@@ -117,6 +117,3 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
     c = AffineObject([0.0], [1.0])
     
     return weak_problem(msh, (A,b,c), data, dbdry, nbdry)
-
-
-# def wave_kron()

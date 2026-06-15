@@ -88,9 +88,9 @@ print(f"\nTime for building Greedy-ROM: {time_greed_rom:.2f}s")
 print(f"Time for building POD-ROM: {time_pod_rom:.2f}s")
 
 
-print(f"\nFull-order dimension: {fom.dim}.")
-print(f"Greedy-Rom dimension: {rom_greedy.dim}.")
-print(f"POD-Rom dimension: {rom_pod.dim}.")
+print(f"\nFull-order dimension: {fom.shape}.")
+print(f"Greedy-Rom dimension: {rom_greedy.shape}.")
+print(f"POD-Rom dimension: {rom_pod.shape}.")
 
 
 #########################
@@ -117,16 +117,16 @@ print(f"Average error of POD-ROM: {np.mean(err_pod_exact):.2e}")
 ########################################
 
 rows = 4    
-cols = np.ceil(rom_greedy.dim[1]/4).astype(int)
+cols = np.ceil(rom_greedy.shape[1]/4).astype(int)
 plotter = pv.Plotter(shape=(rows,cols) , title=f"reduced basis greedy")
-for i in range(rom_greedy.dim[1]):
+for i in range(rom_greedy.shape[1]):
     plotter.subplot(np.floor(i/cols).astype(int),np.mod(i,cols,dtype=int))
     utils.plot_pyvista(U.set_dirichletbcs(NO_MU, rom_greedy.U_basis[:,i]), U.space, f"xi_{i}", plotter)
 plotter.show(interactive_update=True)
 
-cols = np.ceil(rom_pod.dim[1]/4).astype(int)
+cols = np.ceil(rom_pod.shape[1]/4).astype(int)
 plotter = pv.Plotter(shape=(rows,cols) , title=f"reduced basis pod")
-for i in range(rom_pod.dim[1]):
+for i in range(rom_pod.shape[1]):
     plotter.subplot(np.floor(i/cols).astype(int),np.mod(i,cols,dtype=int))
     utils.plot_pyvista(U.set_dirichletbcs(NO_MU, rom_pod.U_basis[:,i]), U.space, f"xi_{i}", plotter)
 plotter.show(interactive_update=True)

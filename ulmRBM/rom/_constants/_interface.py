@@ -1,5 +1,5 @@
 """
-Interfaces for stability and continuity estimators for full-order model constants.
+Interfaces for stability and continuity estimators for parametric operator constants.
 """
 
 from __future__ import annotations
@@ -17,13 +17,13 @@ from typing import Generic
 import numpy as np
 
 from ulmRBM.core import Mu
-from ulmRBM.fom import FOM
+from ulmRBM.fom import ParametricOperator
 
 class ConstantEstimator(Generic[Mu]):
     r"""
-    Base class for estimating stability and continuity constants for full-order models.
+    Base class for estimating stability and continuity constants of a `ParametricOperator`.
     
-    For a parameter :math:`\mu`, let :math:`\sigma(\mu)` be the parameter-dependent constant of the full-order model (stability or continuity constant). Then, the constant estimator provides an estimate :math:`\hat\sigma(\mu) \approx \sigma(\mu)`.
+    For a parameter :math:`\mu`, let :math:`\sigma(\mu)` be the parameter-dependent constant of the operator (stability or continuity constant). Then, the constant estimator provides an estimate :math:`\hat\sigma(\mu) \approx \sigma(\mu)`.
 
     The estimator can be used with an offline/online workflow. During the
     offline stage, :meth:`update` is called for selected training parameters
@@ -34,8 +34,8 @@ class ConstantEstimator(Generic[Mu]):
     Subclasses implement the actual bound logic by defining :meth:`__call__`, ``_initialize`` and ``_update``.
     """
     
-    fom: FOM[Mu]
-    """The full-order model for which the constant is estimated."""
+    B: ParametricOperator[Mu]
+    """The operator for which the constant is estimated."""
     
     n: int
     """Number of offline samples used for the estimator."""
@@ -43,16 +43,16 @@ class ConstantEstimator(Generic[Mu]):
     _initialized: bool = False
     
     @property
-    def fom(self) -> FOM[Mu]:
-        return self._fom
+    def B(self) -> ParametricOperator[Mu]:
+        return self._B
     
-    def __init__(self, fom: FOM[Mu]):
+    def __init__(self, B: ParametricOperator[Mu]):
         r"""
         Args:
-            fom:
-                Full-order model for which to estimate the constant.
+            B:
+                Operator for which to estimate the constant.
         """
-        self._fom = fom
+        self._B = B
         self.n = 0
     
     def update(self, mu: Mu):
@@ -90,7 +90,7 @@ class ConstantEstimator(Generic[Mu]):
         ...
             
     def __repr__(self):
-        return f"<{self.__class__.__name__} for {repr(self.fom)}>"
+        return f"<{self.__class__.__name__} for {repr(self.B)}>"
         
 
 class StabilityEstimator(ConstantEstimator[Mu]):
@@ -177,7 +177,7 @@ class EfficientConstantEstimator(ConstantEstimator[Mu]):
     r"""
     Base class for estimators that provide both lower and upper bounds.
 
-    For a parameter :math:`\mu`, let :math:`\sigma(\mu)` be the parameter-dependent constant of the full-order model (stability or continuity constant). Then, the efficient constant estimator provides not only an estimate :math:`\hat\sigma(\mu) \approx \sigma(\mu)` but also bounds on the constant
+    For a parameter :math:`\mu`, let :math:`\sigma(\mu)` be the parameter-dependent constant of the operator (stability or continuity constant). Then, the efficient constant estimator provides not only an estimate :math:`\hat\sigma(\mu) \approx \sigma(\mu)` but also bounds on the constant
     
     .. math::
         \sigma_{\text{LB}}(\mu) \leq \sigma(\mu) \leq \sigma_{\text{UB}}(\mu).

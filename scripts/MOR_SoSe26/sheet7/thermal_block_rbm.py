@@ -79,8 +79,8 @@ time_buildin_rom = time.time() - start_time
 print(f"Time for building ROM: {time_buildin_rom:.2f}s")
 
 
-print(f"Full-order dimension: {fom.dim}.")
-print(f"Reduced-order dimension: {rom.dim}.")
+print(f"Full-order dimension: {fom.shape}.")
+print(f"Reduced-order dimension: {rom.shape}.")
 
 
 #########################
@@ -140,9 +140,9 @@ for mu in mus:
     plotter.show(interactive_update=True)
 
 rows = 4    
-cols = np.ceil(rom.dim[1]/4).astype(int)
+cols = np.ceil(rom.shape[1]/4).astype(int)
 plotter = pv.Plotter(shape=(rows,cols) , title=f"reduced basis")
-for i in range(rom.dim[1]):
+for i in range(rom.shape[1]):
     plotter.subplot(np.floor(i/cols).astype(int),np.mod(i,cols,dtype=int))
     utils.plot_pyvista(U.set_dirichletbcs(NO_MU, rom.U_basis[:,i]), U.space, f"xi_{i}", plotter)
 plotter.show(interactive_update=True)

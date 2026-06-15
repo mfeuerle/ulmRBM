@@ -8,6 +8,7 @@ Functions
     
     greedy_rbm
     pod_rbm
+    pod_greedy_rbm
 """
 
 from collections.abc import Callable, Sequence
@@ -18,11 +19,13 @@ from scipy.linalg import eigh
 
 from ulmRBM.core import NO_MU, Mu, Vector, Matrix
 from ulmRBM.products import InnerProduct, MatrixInnerProduct, EuclideanInnerProduct
-from ulmRBM.rom import ROM
+from ulmRBM.fom import TimeSteppingSolution
+from ulmRBM.rom import ROM, StationaryTimeSteppingGalerkinROM
 
 __all__= [
     'greedy_rbm',
     'pod_rbm',
+    'pod_greedy_rbm',
 ]
 
 def greedy_rbm(
@@ -280,3 +283,19 @@ def pod_rbm(
     print(f"{time.time() - start_time:6.1f}s: finished ({codes[flag]}); added {n:3d}{f" (i.e. N={rom.dim[1]:3d})" if rom.dim[1] > n else ""} basis functions, avg. error={err[-n-1]:.2e}\n")
     
     return flag, err[-n-1:-1][::-1], err[-2::-1]
+
+
+def pod_greedy_rbm(
+    rom: StationaryTimeSteppingGalerkinROM[Mu],
+    mu_train: Sequence[Mu],
+    N: int,
+    Npod: int = 1,
+    tol: float = 1e-5,
+    strong: bool | Sequence[TimeSteppingSolution] = False,
+    ortho: bool | InnerProduct[Mu] | Matrix = True,
+    update_stability: bool = False,
+    update_continuity: bool = False,
+    callback: Callable[[StationaryTimeSteppingGalerkinROM[Mu], Mu, TimeSteppingSolution], None] | None = None
+) -> tuple[int, np.ndarray, np.ndarray]:
+    
+    pass

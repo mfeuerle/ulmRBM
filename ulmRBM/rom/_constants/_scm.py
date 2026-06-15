@@ -17,7 +17,7 @@ from scipy.linalg import eigvalsh
 from scipy.sparse.linalg import eigsh, LinearOperator, aslinearoperator, onenormest
 
 from ulmRBM.core import Mu, NO_MU
-from ulmRBM.fom import FOM, GalerkinFOM
+from ulmRBM.fom import ParametricGalerkinOperator, ParametricOperator
 from ulmRBM.products import OperatorInnerProduct
 
 from ._interface import StabilityEstimator, ContinuityEstimator, EfficientConstantEstimator
@@ -38,16 +38,16 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
     }
     
     def __init__(self, 
-                 fom: FOM[Mu],
+                 B: ParametricOperator[Mu],
                  mus: list[Mu],
                  Me: int = 40,
                  Mp: int = 40,
                  dist: Callable[[Mu, list[Mu]], np.ndarray[float]] = None,
-                 eigenvalues: Callable[[int | tuple[int,int], FOM[Mu]], tuple[float, float]] | str = 'iterative'):
+                 eigenvalues: Callable[[int | tuple[int,int], ParametricOperator[Mu]], tuple[float, float]] | str = 'iterative'):
         r"""
         Args:
-            fom:
-                Full-order model for which to estimate the constant.
+            B:
+                Parametric operator for which to estimate the constant.
             mus:
                 Parameter set from which to select the ``Mp`` in the online linear optimization problem. Selecting these parameters is done online for each new parameter value. Thus, the SCM online-phase scales with the length of ``mus``. On the other hand, being able to select parameters form ``mus`` that are close to the parameter for which the bounds are evaluated online might enhance the quality of the bounds.
             Me:
@@ -59,12 +59,12 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
             dist:
                 Distance function used to select the ``Me`` and ``Mp`` nearest parameters :math:`\tilde\mu`. The default uses the Euclidean distance, provided that the parameters are convertible to numpy arrays. If a custom function is proved, ``dist(mu, mus)[i]`` should return the distance between ``mu`` and ``mus[i]``.
             eigenvalues:
-                The online linear optimization problem containes some box constraints on the unknowns. These bounds are given by the largest and smallest eigenvalue of several generalized eigenvalue problems :math:`Ax = \lambda Ux`, where :math:`U` is the inner product matrix on the trial space. Denoting the affine decomposition of the full-order system matrix ba :math:`B(\mu) = \sum_{q=1}^Q \theta_q(\mu) B_q`. For Galerkin problems it holds :math:`A_q := 0.5 (B_q + B_q^T)`, :math:`q=1,\ldots,Q`. For Petrov-Galerkin problems, it holds :math:`A_{qq} := B_q^T V^{-1} B_q` for :math:`q=1,\ldots,Q` and :math:`A_{pq} := B_p^T V^{-1} B_q + B_q^T V^{-1} B_p` for :math:`p,q=1,\ldots,Q` with :math:`p<q`, where :math:`V^{-1}` is the inverse of the inner product matrix on the test space (or the inner product of the dual space).                
-                The ``eigenvalues`` parameter defines how these eigenvalues are computed. If ``eigenvalues`` is set to ``'direct'``, the eigenvalues are computed via the dense solver `scipy.linalg.eigvals`. If ``eigenvalues`` is set to ``'iterative'``, the eigenvalues are computed via iterative solver `scipy.sparse.linalg.eigsh` (you might tweak its options by changing ``estimator._eigsh_options``). If ``eigenvalues`` is set to ``'estimate'``, the eigenvalues are estimated by :math:`\|U^{-1}A\|_1` and :math:`-\|U^{-1}A\|_1` using `scipy.sparse.linalg.onenormest`, exept for :math:`A_{qq}`, where the smallest eigenvalue is estimated by zero. Alternatively, a custom function can be provided that returns bounds for the eigenvalues and is called with ``eigenvalues((q,), self.fom)`` for Galerkin problems and ``eigenvalues((p, q), self.fom)`` for Petrov-Galerkin problems.
+                The online linear optimization problem containes some box constraints on the unknowns. These bounds are given by the largest and smallest eigenvalue of several generalized eigenvalue problems :math:`Ax = \lambda Ux`, where :math:`U` is the inner product matrix on the trial space. Denoting the affine decomposition of the parametric operator by :math:`B(\mu) = \sum_{q=1}^Q \theta_q(\mu) B_q`. For Galerkin problems it holds :math:`A_q := 0.5 (B_q + B_q^T)`, :math:`q=1,\ldots,Q`. For Petrov-Galerkin problems, it holds :math:`A_{qq} := B_q^T V^{-1} B_q` for :math:`q=1,\ldots,Q` and :math:`A_{pq} := B_p^T V^{-1} B_q + B_q^T V^{-1} B_p` for :math:`p,q=1,\ldots,Q` with :math:`p<q`, where :math:`V^{-1}` is the inverse of the inner product matrix on the test space (or the inner product of the dual space).                
+                The ``eigenvalues`` parameter defines how these eigenvalues are computed. If ``eigenvalues`` is set to ``'direct'``, the eigenvalues are computed via the dense solver `scipy.linalg.eigvals`. If ``eigenvalues`` is set to ``'iterative'``, the eigenvalues are computed via iterative solver `scipy.sparse.linalg.eigsh` (you might tweak its options by changing ``estimator._eigsh_options``). If ``eigenvalues`` is set to ``'estimate'``, the eigenvalues are estimated by :math:`\|U^{-1}A\|_1` and :math:`-\|U^{-1}A\|_1` using `scipy.sparse.linalg.onenormest`, exept for :math:`A_{qq}`, where the smallest eigenvalue is estimated by zero. Alternatively, a custom function can be provided that returns bounds for the eigenvalues and is called with ``eigenvalues((q,), B)`` for Galerkin problems and ``eigenvalues((p, q), B)`` for Petrov-Galerkin problems.
         """
-        super().__init__(fom)
+        super().__init__(B)
         
-        if self.fom.U.is_parametric or self.fom.V.is_parametric:
+        if self.B.U.is_parametric or self.B.V.is_parametric:
             raise ValueError("SCM does not support parametric inner products.")
         
         if isinstance(eigenvalues, str) and eigenvalues not in ['direct', 'iterative', 'estimate']:
@@ -101,7 +101,7 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
             raise RuntimeError("No precomputed constants available. Call 'update' method at least once.")
         
         val = abs(self._lower_bound(mu))
-        if not isinstance(self.fom, GalerkinFOM): 
+        if not isinstance(self.B, ParametricGalerkinOperator): 
             val = np.sqrt(val)
         return val
     
@@ -110,14 +110,14 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
             raise RuntimeError("No precomputed constants available. Call 'update' method at least once.")
         
         val = abs(self._upper_bound(mu))
-        if not isinstance(self.fom, GalerkinFOM): 
+        if not isinstance(self.B, ParametricGalerkinOperator): 
             val = np.sqrt(val)
         return val
     
     
     def _eval_theta(self, mu: Mu) -> np.ndarray:
-        theta = np.array([theta(mu) for theta in self.fom.B.theta])
-        if not isinstance(self.fom, GalerkinFOM):
+        theta = np.array([theta(mu) for theta in self.B.B.theta])
+        if not isinstance(self.B, ParametricGalerkinOperator):
             theta = np.tril(np.outer(theta, theta))
             theta = theta[np.tril_indices(theta.shape[0])]
         return theta
@@ -149,11 +149,11 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
         sigma, w = self._get_exact_constant(mu)
         w = w.reshape(-1,1)
         
-        if isinstance(self.fom, GalerkinFOM):
-            y = np.array((w.T @ self.fom.B @ w).data) / self.fom.U.norm(NO_MU, w)**2
+        if isinstance(self.B, ParametricGalerkinOperator):
+            y = np.array((w.T @ self.B.B @ w).data) / self.B.U.norm(NO_MU, w)**2
         else:
             sigma = sigma**2
-            y = self.fom.V.dual.inner(NO_MU, np.hstack((self.fom.B @ w).data)) / self.fom.U.norm(NO_MU, w)**2
+            y = self.B.V.dual.inner(NO_MU, np.hstack((self.B.B @ w).data)) / self.B.U.norm(NO_MU, w)**2
             y += np.triu(y, k=1).T
             y = y[np.tril_indices(y.shape[0])]
         
@@ -162,31 +162,31 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
         self._thetas = np.vstack([self._thetas, theta.reshape(1,-1)])
         self._Y_UB   = np.vstack([self._Y_UB, y.reshape(1,-1)])
         
-        if isinstance(self.fom, GalerkinFOM):
+        if isinstance(self.B, ParametricGalerkinOperator):
             self._sigmas_LB = np.array([self(mu_) for mu_ in self._mus])
         else:
             self._sigmas_LB = np.array([self(mu_)**2 for mu_ in self._mus])
             
         
     def _get_box(self):
-        if isinstance(self.fom, GalerkinFOM):
-            lower = np.zeros((len(self.fom.B),))
-            upper = np.zeros((len(self.fom.B),))
-            for p in range(len(self.fom.B)):
-                A = 0.5 * (self.fom.B.data[p].T + self.fom.B.data[p])
+        if isinstance(self.B, ParametricGalerkinOperator):
+            lower = np.zeros((len(self.B.B),))
+            upper = np.zeros((len(self.B.B),))
+            for p in range(len(self.B.B)):
+                A = 0.5 * (self.B.B.data[p].T + self.B.B.data[p])
                 lower[p], upper[p] = self._eigenvalues(A, (p,))
         else:
-            lower = np.zeros((len(self.fom.B), len(self.fom.B)))
-            upper = np.zeros((len(self.fom.B), len(self.fom.B)))
-            for p in range(len(self.fom.B)):
-                A = OperatorInnerProduct(self.fom.B.data[p], self.fom.V.dual)(NO_MU)
+            lower = np.zeros((len(self.B.B), len(self.B.B)))
+            upper = np.zeros((len(self.B.B), len(self.B.B)))
+            for p in range(len(self.B.B)):
+                A = OperatorInnerProduct(self.B.B.data[p], self.B.V.dual)(NO_MU)
                 lower[p,p], upper[p,p] = self._eigenvalues(A, (p, p))
                 for q in range(p):
                     def matmul(v):
-                        val  = self.fom.B.data[p].T @ self.fom.V.dual.riesz(NO_MU, self.fom.B.data[q] @ v)
-                        val += self.fom.B.data[q].T @ self.fom.V.dual.riesz(NO_MU, self.fom.B.data[p] @ v)
+                        val  = self.B.B.data[p].T @ self.B.V.dual.riesz(NO_MU, self.B.B.data[q] @ v)
+                        val += self.B.B.data[q].T @ self.B.V.dual.riesz(NO_MU, self.B.B.data[p] @ v)
                         return val
-                    A = LinearOperator(self.fom.U.shape, matvec=matmul, matmat=matmul, rmatvec=matmul, rmatmat=matmul, dtype=float)
+                    A = LinearOperator(self.B.U.shape, matvec=matmul, matmat=matmul, rmatvec=matmul, rmatmat=matmul, dtype=float)
                     lower[p,q], upper[p,q] = self._eigenvalues(A, (p, q))
             lower = lower[np.tril_indices(lower.shape[0])]
             upper = upper[np.tril_indices(upper.shape[0])]
@@ -204,13 +204,13 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
         """
         if self._eigenvalue_solver == 'direct':
             A = A @ np.eye(A.shape[0])
-            U = self.fom.U(NO_MU) @ np.eye(A.shape[0])
+            U = self.B.U(NO_MU) @ np.eye(A.shape[0])
             eigs = eigvalsh(A, U, overwrite_a=True, overwrite_b=True)
             values = [eigs.real.min(), eigs.real.max()]
         
         elif self._eigenvalue_solver == 'estimate':
             A = aslinearoperator(A)
-            Minv = aslinearoperator(self.fom.U.dual(NO_MU))
+            Minv = aslinearoperator(self.B.U.dual(NO_MU))
             val_max_esti = onenormest(Minv@A)
             if len(pq) == 1 or pq[0] != pq[1]:
                 values = [-val_max_esti, val_max_esti]
@@ -220,8 +220,8 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
         elif self._eigenvalue_solver == 'iterative':
             eigsh_opts = self._eigsh_options.copy()
             eigsh_opts['A'] = A
-            eigsh_opts['M'] = self.fom.U(NO_MU)
-            eigsh_opts['Minv'] = self.fom.U.dual(NO_MU)
+            eigsh_opts['M'] = self.B.U(NO_MU)
+            eigsh_opts['Minv'] = self.B.U.dual(NO_MU)
             eigsh_opts['return_eigenvectors'] = False
             
             if len(pq) == 1 or pq[0] != pq[1]:
@@ -246,7 +246,7 @@ class _SCMBase(EfficientConstantEstimator[Mu]):
                         raise e
                     
         else:
-            values = self._eigenvalue_solver(pq, self.fom)
+            values = self._eigenvalue_solver(pq, self.B)
                 
         return np.sort(values)
     
@@ -264,7 +264,7 @@ class SCMStability(_SCMBase[Mu], StabilityEstimator[Mu]):
     
     
     def _get_exact_constant(self, mu: Mu) -> tuple[float, np.ndarray]:
-        return self.fom.stability(mu, eigenvector=True)
+        return self.B.stability(mu, eigenvector=True)
     
     def _lower_bound(self, mu: Mu) -> float:
         theta = self._eval_theta(mu)
@@ -292,7 +292,7 @@ class SCMContinuity(_SCMBase[Mu], ContinuityEstimator[Mu]):
     """
     
     def _get_exact_constant(self, mu: Mu) -> tuple[float, np.ndarray]:
-        return self.fom.continuity(mu, eigenvector=True)
+        return self.B.continuity(mu, eigenvector=True)
     
     def _lower_bound(self, mu: Mu) -> float:
         theta = self._eval_theta(mu)

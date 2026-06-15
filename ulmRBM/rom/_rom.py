@@ -13,7 +13,7 @@ from warnings import warn
 
 from ulmRBM.core import Mu, Matrix, Vector
 from ulmRBM.solver import Solver, DirectSolver
-from ulmRBM.fom import FOM, GalerkinFOM
+from ulmRBM.fom import Model, FOM, GalerkinFOM
 from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 from ulmRBM.affine import AffineLinear, wrap_affinelinear
 
@@ -47,7 +47,7 @@ class ROM(FOM[Mu]):
     The reduced test space basis :math:`V_N(\mu)` is defined implicitly by a trail-to-test operator :math:`T(\mu)`, i.e. :math:`V_N(\mu) = T(\mu) U_N`. If the test space inner product is parameter independent, the default trial-to-test operator is given by the supremizing operator of the full-order model which will always lead to a stable reduced-order model.
     """
     
-    fom: FOM[Mu]
+    fom: Model[Mu]
     """Underlying full-order model."""
     U_basis: Vector | None
     """:math:`(n,N)` trial space basis matrix, where :math:`N` is the dimension of the reduced trial space."""
@@ -116,14 +116,14 @@ class ROM(FOM[Mu]):
         self.V = self.fom.V.restrict(self._V_basis)
         
     @property
-    def dim(self):
+    def shape(self):
         return (0 if self.U_basis is None else self.U_basis.shape[1],
                 0 if self.V_basis is None else self.V_basis.shape[1],
-                self.fom.dim[2])
+                self.fom.shape[2])
 
     
     def __init__(self, 
-                 fom: FOM[Mu],
+                 fom: Model[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
                  U_basis: AffineLinear[Mu, Vector] | Vector = None,
@@ -159,15 +159,15 @@ class ROM(FOM[Mu]):
             else:
                 residual = 'affine'
         
-        if stability.fom is not fom:
+        if stability.B is not fom:
             raise ValueError("The fom of the stability estimator does not match the fom of the reduced order model.")
-        if continuity.fom is not fom:
+        if continuity.B is not fom:
             raise ValueError("The fom of the continuity estimator does not match the fom of the reduced order model.")
         
         self.fom = fom
         self._fom_stability_estimator  = stability
         self._fom_continuity_estimator = continuity
-        self._solver = solver
+        self.solver = solver
         self._trial2test = trial2test
         if U_basis is not None: self.add_basis(U_basis)
             
@@ -209,7 +209,7 @@ class ROM(FOM[Mu]):
     
     def _add_basis_U(self, basis: Vector):
         if basis.ndim == 1: basis = basis.reshape(-1,1)
-        if basis.shape[0] != self.fom.dim[0]:
+        if basis.shape[0] != self.fom.shape[0]:
             raise ValueError("Basis vector has incompatible dimension.")
         if self.U_basis is None:
             self.U_basis = basis
@@ -221,7 +221,7 @@ class ROM(FOM[Mu]):
         basis = wrap_affinelinear(basis)
         if len(basis.shape) == 1: 
             basis = basis.apply2data(lambda dq: dq.reshape(-1,1))
-        if basis.shape[0] != self.fom.dim[0]:
+        if basis.shape[0] != self.fom.shape[0]:
             raise ValueError("Basis vector has incompatible dimension.")
         if self.V_basis is None:
             V_basis = basis
@@ -258,7 +258,7 @@ class ROM(FOM[Mu]):
             else:
                 U = self.fom.U
                 
-        self.U_basis, Q = orthonormalize(self.U_basis, U,)
+        self.U_basis, Q = orthonormalize(self.U_basis, U)
         self._residual_evaluator.rotate_basis(Q)
         return Q
         

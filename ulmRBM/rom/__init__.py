@@ -8,6 +8,13 @@ Reduced-Order Models
     
     ROM
     GalerkinROM
+    
+Time-Stepping Reduced-Order Models
+----------------------------------
+.. autosummary::
+    :toctree: generated/
+    
+    StationaryTimeSteppingGalerkinROM
 
 Constant Estimators
 -------------------
@@ -34,7 +41,7 @@ Setting up any `EfficientConstantEstimator`
      
 Exact Estimators
 ~~~~~~~~~~~~~~~~
-In general not online-efficient but usefull if the exact stability or continuity constant of the `FOM` can be evaluated fast via custom functions (e.g. if the constants are known analytically).
+In general not online-efficient but usefull if the exact stability or continuity constant of the `ParametricOperator` can be evaluated fast via custom functions (e.g. if the constants are known analytically).
 
 .. autosummary::
     :toctree: generated/
@@ -65,6 +72,7 @@ Online-efficient estimatators.
 
 from ._constants import *
 from ._rom import *
+from ._timestepping import *
 
 _submodules = [
 ]
