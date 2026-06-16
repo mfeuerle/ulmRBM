@@ -25,6 +25,13 @@ Elliptic Problems
     simple_elliptic
     thermal_block
     
+Heat Equation Problems
+----------------------
+.. autosummary::
+    :toctree: generated/
+    
+    simple_timestepping_heat
+    
 Wave Equation Problems
 ----------------------
 .. autosummary::
@@ -35,6 +42,7 @@ Wave Equation Problems
 
 from ._base import *
 from ._elliptic import *
+from ._heat import *
 from ._wave import *
 
 _submodules = [

@@ -122,8 +122,8 @@ print(f"Speedup: {fom_time / (rom_time+error_bound_time):.1f}x")
 print(f"\nMax error of ROM: {np.max(err_exact):.2e}")
 print(f"Average error of ROM: {np.mean(err_exact):.2e}")
 
-print(f"\nMax overestimation of error: {np.max(err_bound) / np.max(err_exact):.1f}")
-print(f"Average overestimation of error: {np.mean(err_bound) / np.mean(err_exact):.1f}")
+print(f"\nMax overestimation of error: {np.max(err_bound / err_exact):.1f}")
+print(f"Average overestimation of error: {np.mean(err_bound / err_exact):.1f}")
 
 ########################################
 # PLOT SOLUTION

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 __all__ = [
     'TimeSteppingSolution',
-    'StationaryTimeSteppingGalerkinModel',
+    'StationaryTimeSteppingGalerkinFOM',
     'explicit_euler',
     'implicit_euler',
     'crank_nicolson',
@@ -46,7 +46,7 @@ class TimeSteppingSolution(Generic[Mu]):
         return zip(self.t, self.u.T)
     
     
-class StationaryTimeSteppingGalerkinModel(Generic[Mu]):
+class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
     r"""Model for time-stepping problems with a Galerkin operator and stationary operators.
     
     For some time-interval :math:`I = [t_0, t_K]`, a Galerkin operator :math:`A(\mu) : W \to W'`, a right-hand side :math:`f(\mu) \in C(I;W')` and a initial value :math:`u_0(\mu) \in W`, consider the problem of finding :math:`u(\mu) \in C^1(I;W)` such that
@@ -88,7 +88,7 @@ class StationaryTimeSteppingGalerkinModel(Generic[Mu]):
     
     @property
     def n(self) -> int:
-        return self.LI.shape[0]
+        return self.W.shape[0]
     
     @property
     def K(self) -> int:
@@ -99,8 +99,8 @@ class StationaryTimeSteppingGalerkinModel(Generic[Mu]):
                  LI: ParametricGalerkinOperator[Mu, Matrix],
                  LE: ParametricGalerkinOperator[Mu, Matrix],
                  b: AffineLinear[Mu, Vector],
-                 t: np.ndarray[float],
                  u0: AffineLinear[Mu, Vector],
+                 t: np.ndarray[float],
                  solver = DirectSolver(factorize=True)):
         r"""
         Args:
@@ -110,10 +110,10 @@ class StationaryTimeSteppingGalerkinModel(Generic[Mu]):
                 Explicit part of the time-stepping scheme, i.e. the operator applied to the solution at the current time step.
             b:
                 Inhomogeneity at each iteration, i.e. ``b(mu)`` has shape ``(n, K)``, with ``b(mu)[:,k]`` being :math:`b_k(\mu)`.
-            t:
-                Time points ``t_0, ..., t_K`` at which the solution is computed.
             u0:
                 Initial value at ``t_0``.
+            t:
+                Time points ``t_0, ..., t_K`` at which the solution is computed.
         """
         assert LI.shape == LE.shape
         assert LI.V is LE.V is LE.U is LI.U
@@ -121,8 +121,8 @@ class StationaryTimeSteppingGalerkinModel(Generic[Mu]):
         
         self.LI = LI
         self.LE = LE
-        self.b = b
-        self.u0 = u0
+        self.b = wrap_affinelinear(b).compress()
+        self.u0 = wrap_affinelinear(u0).compress()
         self.t = t
         self.W = LI.U
         self._solver = wrap_solver(solver)
@@ -135,7 +135,8 @@ class StationaryTimeSteppingGalerkinModel(Generic[Mu]):
                 Parameter for which to solve the time-stepping problem.
                 
         Returns:
-            Solution for the given parameter."""
+            Solution for the given parameter.
+        """
         
         LI = self.LI.B(mu)
         LE = self.LE.B(mu)
@@ -148,94 +149,59 @@ class StationaryTimeSteppingGalerkinModel(Generic[Mu]):
             
         return TimeSteppingSolution(mu, self.t, u)
     
-    
-    def _space_time_matrix(self) -> AffineLinear[Mu, Matrix]:
-        raise NotImplementedError("The space-time matrix is not implemented yet.")
-    
-    def _space_time_rhs(self) -> AffineLinear[Mu, Vector]:
-        # homogenization needed for initial value, must be moved to right-hand side
-        raise NotImplementedError("The space-time right-hand side is not implemented yet.")
-    
-    def convert_to_space_time(self, U, 
-                            V= None,
-                            l: AffineLinear[Mu, Vector] | Vector | None = None,
-                            stability:  Callable[[Mu, ParametricOperator[Mu]], float] | float | str = None,
-                            continuity: Callable[[Mu, ParametricOperator[Mu]], float] | float | str = None,
-                            supremizer: Callable[[Vector, ParametricOperator[Mu]], ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]] = None) -> FOM:
-        r"""Convert the time-stepping model to a space-time model with trial space :math:`U` and test space :math:`V`.
-        
-        Args:
-            U:
-                Trial space for the space-time model.
-            V:
-                Test space for the space-time model.
-                
-        Returns:
-            The corresponding space-time model.
-        """
-        B = self._space_time_matrix()
-        f = self._space_time_rhs()
-        
-        if V is None:
-            fom = GalerkinFOM(B, f, U, l, stability=stability, continuity=continuity, supremizer=supremizer)
-        else:
-            fom = FOM(B, f, U, V, l, stability=stability, continuity=continuity, supremizer=supremizer)
-            
-        fom._solver = None
-        fom.solve = lambda mu: self.solve(mu).u[:,1:].T.flatten()
-        
-        return fom
 
-def explicit_euler(A: AffineLinear[Mu, Matrix],
-                 f: AffineFunction[Mu],
-                 I: tuple[float, float],
-                 K: int,
-                 H: Matrix | AffineLinear[Mu, Matrix] | MatrixInnerProduct[Mu]) -> tuple[ParametricGalerkinOperator[Mu, Matrix], ParametricGalerkinOperator[Mu, Matrix], AffineLinear[Mu, Vector], np.ndarray[float]]:
+def explicit_euler(A: Matrix | AffineLinear[Mu, Matrix],
+                   M: Matrix | AffineLinear[Mu, Matrix],
+                   f: AffineFunction[Mu],
+                   I: tuple[float, float],
+                   K: int) -> tuple[ParametricGalerkinOperator[Mu, Matrix], ParametricGalerkinOperator[Mu, Matrix], AffineLinear[Mu, Vector], np.ndarray[float]]:
     r"""Constructs time-stepping components for the explicit Euler scheme.
     
-    Let :math:`(W,H,W')` be a Gelfand triple and :math:`A(\mu) : W \to W'` an affine-linear Galerkin operator, :math:`f(\mu) \in C(I;W')` an affine-linear right-hand side and :math:`u_0(\mu) \in W` an affine-linear initial value for a time interval :math:`I = [t_0, t_K]` and a time steps :math:`t_k = t_0 + k \cdot \Delta t` for :math:`k=0,\ldots,K` with :math:`\Delta t = (t_K - t_0) / K`.
-    
-    Using the notation of `EquidistantTimeSteppingGalerkinModel`, the explicit Euler scheme is given by
+    For two Galerkin operators :math:`M(\mu), A(\mu) : W \to W'`, a right-hand side :math:`f(\mu) \in C(I;W')`, a initial value :math:`u_0(\mu) \in W` and a time-interval :math:`I = (t_0, t_K)`, consider the linear time-invariant initial value problem of finding :math:`u(\mu) \in C^1(I;W)` such that
     
     .. math::
-        \mathcal{L}^I(\mu) = H, \quad \mathcal{L}^E(\mu) = H + \Delta t A(\mu), \quad b_k(\mu) = \Delta t f(t_k; \mu).
+        \begin{aligned}
+        u(t_0; \mu) &= u_0(\mu),\\
+        M(\mu) u'(t; \mu) - A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
+        \end{aligned}
         
-    where :math:`H` is the matrix representation of the inner product on :math:`H`.
+    Using :math:`t_k = t_0 + k \cdot \Delta t` for a constant step-size :math:`k=0,\ldots,K` with :math:`\Delta t = (t_K - t_0) / K` and using the notation of `StationaryTimeSteppingGalerkinFOM`, the explicit Euler scheme is given by
+    
+    .. math::
+        \mathcal{L}^I(\mu) = M(\mu), \quad \mathcal{L}^E(\mu) = M(\mu) + \Delta t A(\mu), \quad b_k(\mu) = \Delta t f(t_k; \mu).
     
     Args:
         A:
-            The affine-linear Galerkin operator.
+            The stiffness matrix.
+        M:
+            The mass matrix.
         f:
             The affine-linear right-hand side.
         I:
             The time interval.
         K:
             The number of discrete time intervals.
-        H:
-            The inner product on :math:`H`.
 
-    Returns:
-        LI:
-            The implicit part of the time-stepping scheme, i.e. the operator applied to the solution at the next time step.
-        LE:
-            The explicit part of the time-stepping scheme, i.e. the operator applied to the
-            solution at the current time step.
-        b:
-            The inhomogeneity of the time-stepping scheme at each time step.
-        t:
-            The time points at which the solution is computed.
+    Returns
+    -------
+    LI:
+        The implicit part of the time-stepping scheme, i.e. the operator applied to the solution at the next time step.
+    LE:
+        The explicit part of the time-stepping scheme, i.e. the operator applied to the
+        solution at the current time step.
+    b:
+        The inhomogeneity of the time-stepping scheme at each time step.
+    t:
+        The time points at which the solution is computed.
     """
     t = np.linspace(*I, K+1)
     dt = (I[1] - I[0]) / K
     
-    if isinstance(H, MatrixInnerProduct):
-        H = H._M
-    
-    LI = wrap_affinelinear(H)
-    LE = wrap_affinelinear(H) + dt * wrap_affinelinear(A)
+    LI = wrap_affinelinear(M)
+    LE = wrap_affinelinear(M) + dt * wrap_affinelinear(A)
     
     def assemble_b(f):
-        b = np.empty(A.shape[1], K)
+        b = np.empty((A.shape[1], K))
         for k in range(K):
             b[:,k] = dt * np.asarray(f(t[k])).reshape(-1)
         return b
@@ -243,56 +209,58 @@ def explicit_euler(A: AffineLinear[Mu, Matrix],
     b = AffineLinear(f.apply2data(assemble_b))
     return LI, LE, b, t
 
-def implicit_euler(A: AffineLinear[Mu, Matrix],
-                 f: AffineFunction[Mu],
-                 I: tuple[float, float],
-                 K: int,
-                 H: Matrix | AffineLinear[Mu, Matrix] | MatrixInnerProduct) -> tuple[AffineLinear[Mu, Matrix], AffineLinear[Mu, Matrix], AffineLinear[Mu, Vector], np.ndarray[float]]:
+def implicit_euler(A: Matrix | AffineLinear[Mu, Matrix],
+                   M: Matrix | AffineLinear[Mu, Matrix],
+                   f: AffineFunction[Mu],
+                   I: tuple[float, float],
+                   K: int) -> tuple[AffineLinear[Mu, Matrix], AffineLinear[Mu, Matrix], AffineLinear[Mu, Vector], np.ndarray[float]]:
     r"""Constructs time-stepping components for the implicit Euler scheme.
     
-    Let :math:`(W,H,W')` be a Gelfand triple and :math:`A(\mu) : W \to W'` an affine-linear Galerkin operator, :math:`f(\mu) \in C(I;W')` an affine-linear right-hand side and :math:`u_0(\mu) \in W` an affine-linear initial value for a time interval :math:`I = [t_0, t_K]` and a time steps :math:`t_k = t_0 + k \cdot \Delta t` for :math:`k=0,\ldots,K` with :math:`\Delta t = (t_K - t_0) / K`.
-    
-    Using the notation of `EquidistantTimeSteppingGalerkinModel`, the implicit Euler scheme is given by 
+    For two Galerkin operators :math:`M(\mu), A(\mu) : W \to W'`, a right-hand side :math:`f(\mu) \in C(I;W')`, a initial value :math:`u_0(\mu) \in W` and a time-interval :math:`I = (t_0, t_K)`, consider the linear time-invariant initial value problem of finding :math:`u(\mu) \in C^1(I;W)` such that
     
     .. math::
-        \mathcal{L}^I(\mu) = H - \Delta t A(\mu), \quad \mathcal{L}^E(\mu) = H, \quad b_k(\mu) = \Delta t f(t_{k+1}; \mu).
+        \begin{aligned}
+        u(t_0; \mu) &= u_0(\mu),\\
+        M(\mu) u'(t; \mu) - A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
+        \end{aligned}
         
-    where :math:`H` is the matrix representation of the inner product on :math:`H`.
+    Using :math:`t_k = t_0 + k \cdot \Delta t` for a constant step-size :math:`k=0,\ldots,K` with :math:`\Delta t = (t_K - t_0) / K` and using the notation of `StationaryTimeSteppingGalerkinFOM`, the implicit Euler scheme is given by
+    
+    .. math::
+        \mathcal{L}^I(\mu) = M(\mu) - \Delta t A(\mu), \quad \mathcal{L}^E(\mu) = M(\mu), \quad b_k(\mu) = \Delta t f(t_{k+1}; \mu).
     
     Args:
         A:
-            The affine-linear Galerkin operator.
+            The stiffness matrix.
+        M:
+            The mass matrix.
         f:
             The affine-linear right-hand side.
         I:
             The time interval.
         K:
             The number of discrete time intervals.
-        H:
-            The inner product on :math:`H`.
 
-    Returns:
-        LI:
-            The implicit part of the time-stepping scheme, i.e. the operator applied to the solution at the next time step.
-        LE:
-            The explicit part of the time-stepping scheme, i.e. the operator applied to the
-            solution at the current time step.
-        b:
-            The inhomogeneity of the time-stepping scheme at each time step.
-        t:
-            The time points at which the solution is computed.
+    Returns
+    -------
+    LI:
+        The implicit part of the time-stepping scheme, i.e. the operator applied to the solution at the next time step.
+    LE:
+        The explicit part of the time-stepping scheme, i.e. the operator applied to the
+        solution at the current time step.
+    b:
+        The inhomogeneity of the time-stepping scheme at each time step.
+    t:
+        The time points at which the solution is computed.
     """
     t = np.linspace(*I, K+1)
     dt = (I[1] - I[0]) / K
     
-    if isinstance(H, MatrixInnerProduct):
-        H = H._M
-    
-    LI = wrap_affinelinear(H._M) - dt * wrap_affinelinear(A)
-    LE = wrap_affinelinear(H._M)
+    LI = wrap_affinelinear(M) - dt * wrap_affinelinear(A)
+    LE = wrap_affinelinear(M)
     
     def assemble_b(f):
-        b = np.empty(A.shape[1], K)
+        b = np.empty((A.shape[1], K))
         for k in range(K):
             b[:,k] = dt * np.asarray(f(t[k+1])).reshape(-1)
         return b
@@ -301,56 +269,58 @@ def implicit_euler(A: AffineLinear[Mu, Matrix],
     return LI, LE, b, t
     
     
-def crank_nicolson(A: AffineLinear[Mu, Matrix],
-                 f: AffineFunction[Mu],
-                 I: tuple[float, float],
-                 K: int,
-                 H: Matrix | AffineLinear[Mu, Matrix] | MatrixInnerProduct) -> tuple[AffineLinear[Mu, Matrix], AffineLinear[Mu, Matrix], AffineLinear[Mu, Vector], np.ndarray[float]]:
+def crank_nicolson(A: Matrix | AffineLinear[Mu, Matrix],
+                   M: Matrix | AffineLinear[Mu, Matrix],
+                   f: AffineFunction[Mu],
+                   I: tuple[float, float],
+                   K: int) -> tuple[AffineLinear[Mu, Matrix], AffineLinear[Mu, Matrix], AffineLinear[Mu, Vector], np.ndarray[float]]:
     r"""Constructs time-stepping components for the Crank-Nicolson scheme.
     
-    Let :math:`(W,H,W')` be a Gelfand triple and :math:`A(\mu) : W \to W'` an affine-linear Galerkin operator, :math:`f(\mu) \in C(I;W')` an affine-linear right-hand side and :math:`u_0(\mu) \in W` an affine-linear initial value for a time interval :math:`I = [t_0, t_K]` and a time steps :math:`t_k = t_0 + k \cdot \Delta t` for :math:`k=0,\ldots,K` with :math:`\Delta t = (t_K - t_0) / K`.
-    
-    Using the notation of `EquidistantTimeSteppingGalerkinModel`, the Crank-Nicolson scheme is given by
+    For two Galerkin operators :math:`M(\mu), A(\mu) : W \to W'`, a right-hand side :math:`f(\mu) \in C(I;W')`, a initial value :math:`u_0(\mu) \in W` and a time-interval :math:`I = (t_0, t_K)`, consider the linear time-invariant initial value problem of finding :math:`u(\mu) \in C^1(I;W)` such that
     
     .. math::
-        \mathcal{L}^I(\mu) = H - \frac{\Delta t}{2} A(\mu), \quad \mathcal{L}^E(\mu) = H + \frac{\Delta t}{2} A(\mu), \quad b_k(\mu) = \frac{\Delta t}{2} ( f(t_k; \mu) + f(t_{k+1}; \mu) ).
+        \begin{aligned}
+        u(t_0; \mu) &= u_0(\mu),\\
+        M(\mu) u'(t; \mu) - A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
+        \end{aligned}
         
-    where :math:`H` is the matrix representation of the inner product on :math:`H`.
+    Using :math:`t_k = t_0 + k \cdot \Delta t` for a constant step-size :math:`k=0,\ldots,K` with :math:`\Delta t = (t_K - t_0) / K` and using the notation of `StationaryTimeSteppingGalerkinFOM`, the Crank-Nicolson scheme is given by
+    
+    .. math::
+        \mathcal{L}^I(\mu) = M(\mu) - \frac{\Delta t}{2} A(\mu), \quad \mathcal{L}^E(\mu) = M(\mu) + \frac{\Delta t}{2} A(\mu), \quad b_k(\mu) = \frac{\Delta t}{2} ( f(t_k; \mu) + f(t_{k+1}; \mu) ).
     
     Args:
         A:
-            The affine-linear Galerkin operator.
+            The stiffness matrix.
+        M:
+            The mass matrix.
         f:
             The affine-linear right-hand side.
         I:
             The time interval.
         K:
             The number of discrete time intervals.
-        H:
-            The inner product on :math:`H`.
 
-    Returns:
-        LI:
-            The implicit part of the time-stepping scheme, i.e. the operator applied to the solution at the next time step.
-        LE:
-            The explicit part of the time-stepping scheme, i.e. the operator applied to the
-            solution at the current time step.
-        b:
-            The inhomogeneity of the time-stepping scheme at each time step.
-        t:
-            The time points at which the solution is computed.
+    Returns
+    -------
+    LI:
+        The implicit part of the time-stepping scheme, i.e. the operator applied to the solution at the next time step.
+    LE:
+        The explicit part of the time-stepping scheme, i.e. the operator applied to the
+        solution at the current time step.
+    b:
+        The inhomogeneity of the time-stepping scheme at each time step.
+    t:
+        The time points at which the solution is computed.
     """
     t = np.linspace(*I, K+1)
     dt = (I[1] - I[0]) / K
     
-    if isinstance(H, MatrixInnerProduct):
-        H = H._M
-    
-    LI = wrap_affinelinear(H._M) - dt/2 * wrap_affinelinear(A)
-    LE = wrap_affinelinear(H._M) + dt/2 * wrap_affinelinear(A)
+    LI = wrap_affinelinear(M) - dt/2 * wrap_affinelinear(A)
+    LE = wrap_affinelinear(M) + dt/2 * wrap_affinelinear(A)
     
     def assemble_b(f):
-        b = np.empty(A.shape[1], K)
+        b = np.empty((A.shape[1], K))
         for k in range(K):
             b[:,k] = dt/2 * np.asarray(f(t[k]) + f(t[k+1])).reshape(-1)
         return b

@@ -119,18 +119,22 @@ class DirectSolver(Solver):
                 return self._solveA(b)
             else:
                 self._A = A
+                
+                if not (isinstance(A, np.ndarray) or sp.sparse.issparse(A)):
+                    raise TypeError("Matrix A must be a NumPy array or SciPy sparse array.")
+                
                 if sp.sparse.issparse(A):
                     if A.shape[0] != A.shape[1]:
                         from warnings import warn
                         warn("no sparse factorization for rectangular matrices; converting to dense", sp.sparse.SparseEfficiencyWarning)
                         A = A.toarray()
                     else:
+                        A = A.tocsc()
                         self._solveA = sp.sparse.linalg.factorized(A)
                 if isinstance(A, np.ndarray):
                     Q, R = np.linalg.qr(A, mode='reduced')
                     self._solveA = lambda b: sp.linalg.solve_triangular(R, Q.T @ b, lower=False)
-                else:
-                    raise TypeError("Matrix A must be a NumPy array or SciPy sparse array.")
+                
                 return self._solveA(b)
         
         if sp.sparse.issparse(A):

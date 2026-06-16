@@ -18,20 +18,20 @@ from ulmRBM.core import (
 )
 from ulmRBM.solver import Solver, DirectSolver
 from ulmRBM.affine import AffineLinear
-from ulmRBM.fom import ParametricGalerkinOperator, TimeSteppingSolution, StationaryTimeSteppingGalerkinModel
+from ulmRBM.fom import ParametricGalerkinOperator, TimeSteppingSolution, StationaryTimeSteppingGalerkinFOM
 from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 
 from ._constants import StabilityEstimator, ContinuityEstimator
 from .__residual import TimeSteppingResidualNormEvaluator, FullTimeSteppingResidualNormEvaluator, AffineTimeSteppingResidualNormEvaluator
 
     
-class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinModel[Mu]):
+class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     r"""Reduced-order model for time-stepping problems with a Galerkin operator and stationary operators.
     
-    This reduced-order model approximates the space :math:`U` in `StationaryTimeSteppingGalerkinModel` by a low-dimensional subspace spanned :math:`U_{\text{basis}} \subset U`.
+    This reduced-order model approximates the space :math:`U` in `StationaryTimeSteppingGalerkinFOM` by a low-dimensional subspace spanned :math:`U_{\text{basis}} \subset U`.
     """
     
-    fom: StationaryTimeSteppingGalerkinModel[Mu]
+    fom: StationaryTimeSteppingGalerkinFOM[Mu]
     """Underlying full-order model."""
     
     U_basis: Vector | None
@@ -40,6 +40,8 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinModel[Mu])
     _residual_evaluator: TimeSteppingResidualNormEvaluator[Mu]
     _LI_stability_estimator: StabilityEstimator[Mu]
     _LE_continuity_estimator: ContinuityEstimator[Mu]
+    
+    _U_basis: Vector | None = None
     
     _need_assemble: bool
      
@@ -89,8 +91,13 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinModel[Mu])
         self._U_basis = value
         self._need_assemble = True
         self.W = self.fom.W.restrict(self._U_basis)
+        
+    
+    @property
+    def n(self):
+        return 0 if self.U_basis is None else self.U_basis.shape[1]
 
-    def __init__(self, fom: StationaryTimeSteppingGalerkinModel[Mu],
+    def __init__(self, fom: StationaryTimeSteppingGalerkinFOM[Mu],
                  LI_stability: StabilityEstimator[Mu],
                  LE_continuity: ContinuityEstimator[Mu],
                  U_basis: Vector = None,
@@ -154,17 +161,14 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinModel[Mu])
             U_basis = self._U_basis
             self.LI = U_basis.T @ self.fom.LI.B @ U_basis
             self.LE = U_basis.T @ self.fom.LE.B @ U_basis
-            b = np.empty(self.fom.K-1, dtype=AffineLinear)
-            for k in range(self.fom.K-1):
-                b[k] = U_basis.T @ self.fom.b[k]
-            self.b = b
+            self.b = U_basis.T @ self.fom.b
             
             if not self.fom.W.is_parametric:
                 # orthogonal projection of u0 onto U_basis w.r.t. the self.fom.U inner product if U is paramter-independent
                 solver = DirectSolver(factorize=True)
                 Ub_U_Ub = self.W(NO_MU)
                 Ub_U = U_basis.T @ self.fom.W(NO_MU)
-                orthogonal_projection = lambda u: self.U_basis @ solver(Ub_U_Ub, Ub_U @ u)
+                orthogonal_projection = lambda u: solver(Ub_U_Ub, Ub_U @ u)
                 self.u0 = self.fom.u0.apply2data(orthogonal_projection)
             else:
                 solver = DirectSolver(factorize=True)
@@ -213,16 +217,18 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinModel[Mu])
         self._residual_evaluator.rotate_basis(Q)
         
         
-    def resconstruct(self, mu: Mu, u: TimeSteppingSolution = None) -> TimeSteppingSolution:
+    def reconstruct(self, mu: Mu, u: TimeSteppingSolution = None) -> TimeSteppingSolution:
         if u is None: u = self.solve(mu)
         return TimeSteppingSolution(u.mu, u.t, self.U_basis @ u.u)
     
     
     def error(self, mu: Mu, u: TimeSteppingSolution = None, u_fom: TimeSteppingSolution = None) -> np.ndarray:
         if u is None: u = self.solve(mu)
-        if u_fom is None: u_fom = self.fom.solve(mu).u
-        u = self.resconstruct(u).u
-        return self.fom.W.norm(mu, u - u_fom)
+        if u_fom is None: u_fom = self.fom.solve(mu)
+        u = self.reconstruct(mu, u)
+        if len(u.t) != len(u_fom.t) or np.max(np.abs(u.t - u_fom.t)) > 1e-12:
+            raise ValueError("Time points of ROM and FOM solution do not match.")
+        return self.fom.W.norm(mu, u.u - u_fom.u)
         
         
     def error_bound(self, mu: Mu, u: TimeSteppingSolution = None) -> np.ndarray:

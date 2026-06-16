@@ -147,6 +147,9 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         >>> ad(3.0)  # 3*1 + 9*2 = 21
         21.0
         """
+        if len(self) == 1:
+            if isinstance(self.theta[0], TrivialParametric) and self.theta[0].data == 1.0:
+                return self.data[0]
         val = self.theta[0](mu) * self.data[0]
         for theta_q, data_q in zip(self.theta[1:], self.data[1:]):
             val += theta_q(mu) * data_q

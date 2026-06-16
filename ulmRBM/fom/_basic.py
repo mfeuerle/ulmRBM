@@ -41,6 +41,9 @@ class Model(ParametricOperator[Mu]):
     
     shape: tuple[int, int, int]
     r"""``(m, n, p)``, shape of the system matrix :math:`B(\mu)` and output :math:`s(\mu)`, where :math:`m` is the test space dimension, :math:`n` is the trial space dimension, and :math:`p` is the output dimension."""
+    
+    dim: tuple[int, int, int]
+    r"""for backwards compatibility, alias for `shape`."""
 
     f: AffineLinear[Mu, Vector]
     r"""Affine decomposition of the right-hand side :math:`f(\mu) = \sum_{q=1}^{Q_f} \theta_q^f(\mu) f_q`."""
@@ -52,6 +55,10 @@ class Model(ParametricOperator[Mu]):
     def shape(self):
         p = self.l.shape[0] if self.l is not None else 0
         return (*super().shape,p)
+    
+    @property
+    def dim(self):
+        return self.shape
     
     
     def __init__(self, f: AffineLinear[Mu, Vector] | Vector, l: AffineLinear[Mu, Vector] | Vector | None = None, solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None):

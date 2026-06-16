@@ -167,7 +167,7 @@ class ROM(FOM[Mu]):
         self.fom = fom
         self._fom_stability_estimator  = stability
         self._fom_continuity_estimator = continuity
-        self.solver = solver
+        self._solver = solver
         self._trial2test = trial2test
         if U_basis is not None: self.add_basis(U_basis)
             

@@ -24,7 +24,7 @@ Time-Stepping Models
     :toctree: generated/
     
     TimeSteppingSolution
-    StationaryTimeSteppingGalerkinModel
+    StationaryTimeSteppingGalerkinFOM
     explicit_euler
     implicit_euler
     crank_nicolson

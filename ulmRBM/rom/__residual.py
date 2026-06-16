@@ -243,7 +243,7 @@ class FullTimeSteppingResidualNormEvaluator(TimeSteppingResidualNormEvaluator[Mu
     online_efficient = False
     
     def dual_norm(self, mu: Mu, u: TimeSteppingSolution) -> float:
-        u = self.rom.resconstruct(u).u
+        u = self.rom.reconstruct(mu, u).u
         K = self.rom.fom.K
         LIu = self.rom.fom.LI.B(mu) @ u[:,1:K+1]
         LEu = self.rom.fom.LE.B(mu) @ u[:,0:K]
@@ -252,7 +252,7 @@ class FullTimeSteppingResidualNormEvaluator(TimeSteppingResidualNormEvaluator[Mu
         return self.rom.fom.W.dual.norm(mu, r)
     
     def initial_error(self, mu: Mu, u: TimeSteppingSolution) -> float:
-        u0 = self.rom.resconstruct(u).u[:,0]
+        u0 = self.rom.reconstruct(mu, u).u[:,0]
         return self.rom.fom.W.norm(mu, u0 - self.rom.fom.u0(mu))
         
         
@@ -265,4 +265,16 @@ class AffineTimeSteppingResidualNormEvaluator(TimeSteppingResidualNormEvaluator[
     online_efficient = True
     
     def _initialize(self):
-        raise NotImplementedError("Affine time-stepping residual norm evaluation is not implemented yet.")
+        pass
+    
+    def add_basis(self, basis: Vector):
+        pass
+    
+    def rotate_basis(self, rotation: np.ndarray):
+        pass
+    
+    def dual_norm(self, mu: Mu, u: TimeSteppingSolution) -> float:
+        pass
+    
+    def initial_error(self, mu: Mu, u: TimeSteppingSolution) -> float:
+        pass
