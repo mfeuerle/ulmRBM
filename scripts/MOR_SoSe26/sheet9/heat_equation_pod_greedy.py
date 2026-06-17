@@ -10,14 +10,14 @@ from ulmRBM.fom import *
 from ulmRBM.rom import *
 from ulmRBM.reductors import pod_greedy_rbm
 
-Omega = [0, 1]
-nx = 500
+# Omega = [0, 1]
+# nx = 500
 
-# Omega = [[0,0], [1,1]]
-# nx = [50,50]
+Omega = [[0,0], [1,1]]
+nx = [50,50]
 
 I = [0,1]
-K = 2000
+K = 50
 
 mu_range = (0.01, 1.0)
 
@@ -25,10 +25,10 @@ strong = True
 ortho = True
 N_train = 200
 N_test = 20
-Nmax = 15
+Nmax = 20
 
 #########################
-# FULL-ORDER MODEL
+# FOM
 #########################
 
 f = AffineFunction([1.0], [lambda t: lambda x: np.ones(x.shape[1])])
@@ -44,22 +44,21 @@ LE = ParametricGalerkinOperator(LE, U_H10, stability='direct', continuity='direc
 
 fom = StationaryTimeSteppingGalerkinFOM(LI, LE, b, u0, t)
 
+def solve_fom(mu):
+    u = fom.solve(mu)
+    u_full = np.zeros((U.dim, len(u.t)))
+    for k in range(len(u.t)):
+        u_full[:,k] = U.set_dirichletbcs(mu, u.u[:,k])
+    return TimeSteppingSolution(u.t, u_full)
+
 print(f"FOM dimension: {fom.n}")
 print(f"Number of time steps: {fom.K+1}")
 print(f"Number of affine terms in LI: {len(LI.B)}")
 print(f"Number of affine terms in LE: {len(LE.B)}")
 print(f"Number of affine terms in b: {len(b)}")
 
-def solve_fom(mu):
-    u = fom.solve(mu)
-    u_full = np.zeros((U.dim, len(u.t)))
-    for k in range(len(u.t)):
-        u_full[:,k] = U.set_dirichletbcs(mu, u.u[:,k])
-    return TimeSteppingSolution(mu, u.t, u_full)
-
-
 #########################
-# ROM: CONFIG
+# ROM: SETUP
 #########################
 
 mu_train = np.asarray([np.random.uniform(*mu_range) for _ in range(N_train)])
@@ -74,20 +73,25 @@ def solve_rom(mu):
     u_full = np.zeros((U.dim, len(u.t)))
     for k in range(len(u.t)):
         u_full[:,k] = U.set_dirichletbcs(mu, u.u[:,k])
-    return TimeSteppingSolution(mu, u.t, u_full)
+    return TimeSteppingSolution(u.t, u_full)
 
 #########################
 # ROM: BUILD
 #########################
 start_time = time.time()
 
-greedy_constant_estimator(LI_coercivity, mu_train)
-greedy_constant_estimator(LE_continuity, mu_train)
+greedy_constant_estimator(LI_coercivity, mu_train, N=5)
+greedy_constant_estimator(LE_continuity, mu_train, N=5)
+
+ec_0 = LE_continuity(mu_range[0])/LI_coercivity(mu_range[0])
+ec_1 = LE_continuity(mu_range[1])/LI_coercivity(mu_range[1])
+print(f"Exponential coefficent C^E/beta^I ranges from {ec_1:.1f} to {ec_0:.1f}")
+print(f"thus, expect the error bound at the final time to range between {ec_1**K:.2e} and {ec_0**K:.2e} times the initial error\n")
 
 err_decay = pod_greedy_rbm(rom, mu_train, Nmax, strong=strong, ortho=ortho)[1]
 
 time_buildin_rom = time.time() - start_time
-print(f"Time for building ROM: {time_buildin_rom:.2f}s")
+print(f"Time for building ROM: {time_buildin_rom:.1f}s")
 
 
 print(f"Full-order dimension: {fom.n}")
@@ -139,12 +143,10 @@ print(f"Average overestimation of error: {np.mean(err_bound / err_exact):.2e}")
 ########################################
 # PLOT SOLUTION
 ########################################
+mus = [mu_range[0], (mu_range[1]-mu_range[0])/2 + mu_range[0], mu_range[1]]
 
 if np.isscalar(nx) or len(nx) == 1:
-    mus = [np.random.uniform(*mu_range) for i in range(3)]
-
     T, X = np.meshgrid(t,U.space.mesh.geometry.x[:,0])
-
     for mu in mus:
         u_fom = solve_fom(mu)
         u_rom = solve_rom(mu)
@@ -163,15 +165,32 @@ if np.isscalar(nx) or len(nx) == 1:
         ax.set_zlabel('$u(t,x)$')
         
         ax = fig.add_subplot(1, 3, 3)
-        ax.semilogy(t, rom.error(mu), "*-")
+        ax.semilogy(t, rom.error(mu), "-")
         tmp = rom.error_bound(mu)
         idx = tmp < 1e100
-        ax.semilogy(t[idx], tmp[idx], "*--")
+        ax.semilogy(t[idx], tmp[idx], "--")
         ax.legend(['exact error', 'error bound'])
         ax.set_xlabel('$t$')
-        ax.set_ylabel(r'$\|u_{fom}(t) - u_{rom}(t)\|$')
+        ax.set_ylabel(r'$\|u^\delta(t) - u^N(t)\|$')
         
         plt.show(block=False)
+else:
+    for i,mu in enumerate(mus):
+        fig = plt.figure(fr'error vs error-bound')
+        ax = fig.add_subplot(1, 3, i+1)
+        ax.title.set_text(fr'$\mu = {mu:.2f}$')
+        ax.semilogy(t, rom.error(mu), "-")
+        tmp = rom.error_bound(mu)
+        idx = tmp < 1e100
+        ax.semilogy(t[idx], tmp[idx], "--")
+        ax.legend(['exact error', 'error bound'])
+        ax.set_xlabel('$t$')
+        ax.set_ylabel(r'$\|u^\delta(t) - u^N(t)\|$')
+    plt.show(block=False)
+
+########################################
+# PLOT ERROR DECAY
+########################################
     
 start = 3
 stop = len(err_decay)-1
@@ -180,8 +199,8 @@ y_exp = np.exp(b) * np.exp(C * np.arange(start,stop))
 
 plt.figure('error decay')
 plt.semilogy(err_decay, label="POD-greedy error decay")
-plt.semilogy(range(start,stop), y_exp, "--", label=fr"$e^{{{C:.3f}x}}$")
-plt.xlabel('POD-greedy iteration')
+plt.semilogy(range(start,stop), y_exp, "--", label=fr"$e^{{{C:.3f}N}}$")
+plt.xlabel('POD-greedy iteration $N$')
 plt.ylabel('max. error over training set')
 plt.legend()
 

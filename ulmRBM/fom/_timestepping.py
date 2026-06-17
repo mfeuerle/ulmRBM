@@ -34,8 +34,6 @@ from ._operators import ParametricGalerkinOperator, ParametricOperator
 class TimeSteppingSolution(Generic[Mu]):
     r"""Solution of a time-stepping problem for a given parameter.
     """
-    mu: Mu
-    r"""Parameter for which the solution is computed."""
     t: np.ndarray[float]
     r"""Time points at which the solution is computed."""
     u: np.ndarray[float]
@@ -49,15 +47,17 @@ class TimeSteppingSolution(Generic[Mu]):
 class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
     r"""Model for time-stepping problems with a Galerkin operator and stationary operators.
     
-    For some time-interval :math:`I = [t_0, t_K]`, a Galerkin operator :math:`A(\mu) : W \to W'`, a right-hand side :math:`f(\mu) \in C(I;W')` and a initial value :math:`u_0(\mu) \in W`, consider the problem of finding :math:`u(\mu) \in C^1(I;W)` such that
+    For some time-interval :math:`I = [t_0, t_K]`, two Galerkin operators :math:`M(\mu), A(\mu) : W \to W'`, a right-hand side :math:`f(\mu) \in C(I;W')` and a initial value :math:`u_0(\mu) \in W`, consider the problem of finding :math:`u(\mu) \in C^1(I;W)` such that
     
     .. math::
         \begin{aligned}
         u(t_0; \mu) &= u_0(\mu),\\
-        u'(t; \mu) - A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
-        \end{aligned}        
+        M(\mu) u'(t; \mu) - A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K],
+        \end{aligned}
     
-    For a given sequence of time points :math:`t_0, ..., t_K` in :math:`I`, the model represents the time-stepping problem of finding :math:`u_k(\mu) \approx u(t_k; \mu)` for :math:`k=0,\ldots,K` such that
+    which can be solved by a time-stepping scheme.
+    
+    For a given sequence of time points :math:`t_0, ..., t_K` in :math:`I`, this class represents a abstract time-stepping scheme of finding :math:`u_k(\mu) \approx u(t_k; \mu)` for :math:`k=0,\ldots,K` such that
     
     .. math::
         \begin{aligned}
@@ -65,19 +65,19 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
         \mathcal{L}^I(\mu) u_{k+1}(\mu) &= \mathcal{L}^E(\mu) u_k(\mu) + b_k(\mu)\quad\text{in $W'$} &&\text{for } k=0,\ldots,K-1.
         \end{aligned}
         
-    where :math:`\mathcal{L}^I(\mu), \mathcal{L}^E(\mu) : W \to W'` are the implicit and explicit part of the time-stepping scheme, respectively, and :math:`b_k(\mu) \in W'` is the inhomogeneity at time :math:`t_k`. This model is called "stationary", since the operators :math:`\mathcal{L}^I(\mu)` and :math:`\mathcal{L}^E(\mu)` are independent of the time step :math:`k`, i.e. they only depend on the parameter :math:`\mu` but not on the time points :math:`t_k` and are thus stationary in time. Typically, this is the case if :math:`A(\mu)` is stationary and the time-steps are equidistant.
+    where :math:`\mathcal{L}^I(\mu), \mathcal{L}^E(\mu) : W \to W'` are the implicit and explicit part of the time-stepping scheme, respectively, and :math:`b_k(\mu) \in W'` is the inhomogeneity at time :math:`t_k`. This model is called "stationary", since the operators :math:`\mathcal{L}^I(\mu)` and :math:`\mathcal{L}^E(\mu)` are independent of the time step :math:`k`, i.e. they only depend on the parameter :math:`\mu` but not on the time points :math:`t_k` and are thus stationary in time. Typically, this is the case if the time-steps are equidistant.
     """
     
     LI: ParametricGalerkinOperator[Mu, Matrix]
-    """Implicit part of the time-stepping scheme, i.e. the operator applied to the solution at the next time step."""
+    r"""Implicit part of the time-stepping scheme, i.e. the operator :math:`\mathcal{L}^I(\mu):W\to W'` applied to the solution at the next time step."""
     LE: ParametricGalerkinOperator[Mu, Matrix]
-    """Explicit part of the time-stepping scheme, i.e. the operator applied to the solution at the current time step."""
-    b: np.ndarray[AffineLinear[Mu, Vector]]
+    r"""Explicit part of the time-stepping scheme, i.e. the operator :math:`\mathcal{L}^E(\mu):W\to W'` applied to the solution at the current time step."""
+    b: AffineLinear[Mu, Vector]
     """Inhomogeneity of the time-stepping scheme at each time step."""
     u0: AffineLinear[Mu, Vector]
     """Initial value."""
     t: np.ndarray[float]
-    """Time points at which the solution is computed."""
+    """Time points at which the solution is approximated."""
     W: InnerProduct[Mu]
     """Inner product on the space :math:`W`."""
     n: int
@@ -113,7 +113,7 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
             u0:
                 Initial value at ``t_0``.
             t:
-                Time points ``t_0, ..., t_K`` at which the solution is computed.
+                Time points ``t_0, ..., t_K`` at which the solution is approximated.
         """
         assert LI.shape == LE.shape
         assert LI.V is LE.V is LE.U is LI.U
@@ -147,7 +147,7 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
         for k in range(self.K):
             u[:,k+1] = self._solver(LI, LE @ u[:,k] + b[:,k], u[:,k])
             
-        return TimeSteppingSolution(mu, self.t, u)
+        return TimeSteppingSolution(self.t, u)
     
 
 def explicit_euler(A: Matrix | AffineLinear[Mu, Matrix],

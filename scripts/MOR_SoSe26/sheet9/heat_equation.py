@@ -47,7 +47,7 @@ def solve_fom(mu):
     u_full = np.zeros((U.dim, len(u.t)))
     for k in range(len(u.t)):
         u_full[:,k] = U.set_dirichletbcs(mu, u.u[:,k])
-    return TimeSteppingSolution(mu, u.t, u_full)
+    return TimeSteppingSolution(u.t, u_full)
 
 ########################################
 # PLOT SOLUTION

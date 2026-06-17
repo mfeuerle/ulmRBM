@@ -36,7 +36,7 @@ class _ScaledScalar(ParametricObject[Mu, float]):
     
 def multiply_theta(scalar1: ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu] | float,
                      scalar2: ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu] | float) -> ParametricObject[Mu, float] | TrivialParametric[Mu, float] | _ScaledScalar[Mu]:
-    r"""Multiply two """
+    r"""Multiply two scalar valued parametric functions, with optimizations for trivial parameter dependencies."""
     
     scalar1 = unwrap(scalar1)
     scalar2 = unwrap(scalar2)

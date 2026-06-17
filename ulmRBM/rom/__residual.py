@@ -197,7 +197,7 @@ class TimeSteppingResidualNormEvaluator(Generic[Mu]):
     def __init__(self, rom: StationaryTimeSteppingGalerkinROM[Mu]):
         self.rom = rom
         self._initialize()
-        if rom.U_basis is not None: self.add_basis(rom.U_basis)
+        if rom.W_basis is not None: self.add_basis(rom.W_basis)
         
     def _initialize(self):
         r"""
