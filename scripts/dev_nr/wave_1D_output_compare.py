@@ -5,7 +5,7 @@ from scipy.sparse.linalg import LinearOperator
 from dolfinx import mesh
 import ufl
 
-from ulmRBM.affine import AffineObject
+from ulmRBM.affine import AffineObject, AffineLinear, wrap_affinelinear
 from ulmRBM.fenicsx import utils, norms, utils_nr
 from ulmRBM.fenicsx.problems import simple_wave, assemble_system, assemble_vector
 from ulmRBM.solver import DirectSolver, IterativeSolver
@@ -67,8 +67,12 @@ terminal_bdry = [lambda tx: utils.isclose(tx[0], I[1])]
 terminal_bdry = [mesh.locate_entities_boundary(msh, tdim-1, bdry) for bdry in  terminal_bdry]
 ds = utils.create_measure("ds", msh, tdim-1, terminal_bdry)
 u = ufl.TrialFunction(U.space)
-l_form = u * ds
-l_dof = assemble_vector(u * ds)
+l2 = assemble_vector(u * ds).reshape(-1,1)
+l_f = l2[U.dofs].T
+l0 = wrap_affinelinear(l2)
+s0 = sum([l0.apply2data(lambda lq: lq[bc.dofs]).T @ bc for bc in U.bcs])
+
+fom_dofs = FOM(B, f, U_BiV, V_H10, stability=1.0, continuity=1.0, solver=solver, l=l_f)
 
 mus = [np.random.uniform(*mu_range) for i in range(50)]
 mus = [np.random.uniform(*mu_range) for i in range(50)]
@@ -81,19 +85,24 @@ plot_u_T = False
 
 s_foms = np.zeros_like(mus)
 s_foms_2 = np.zeros_like(mus)
+s_foms_3 = np.zeros_like(mus)
 
 err = np.zeros_like(mus)
+err2 = np.zeros_like(mus)
 
 for i, mu in enumerate(mus):
     print(".", end="",flush=True)
-    u_fom = fom_intpol.solve(mu)
-    u_fom_wb = U.set_dirichletbcs(mu, u_fom)
-    s_foms[i] = fom_intpol.output(mu, u_fom)[0]
-    s_foms_2[i] = l_dof @ u_fom_wb
+    u_intpol = fom_intpol.solve(mu)
+    u_intpol_wb = U.set_dirichletbcs(mu, u_intpol)
+    s_foms_3[i] = fom_dofs.output(mu)[0] + s0(mu)[0]
+    s_foms[i] = fom_intpol.output(mu, u_intpol)[0]
+    s_foms_2[i] = l2.reshape(-1) @ u_intpol_wb
 
 err = np.abs(s_foms-s_foms_2)
+err2 = np.abs(s_foms_3-s_foms_2)
 
-print(f"\nmax err: {np.max(err)}")
+print(f"\nmax err 1: {np.max(err)}")
+print(f"\nmax err 2: {np.max(err2)}")
 
 fig = plt.figure()
 fig.suptitle("Output")
