@@ -84,9 +84,9 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sp
     The solution :math:`u` of the full system then reads :math:`u_{F_U} = \tilde{u}` and :math:`u_{D_U} = g_{D_U}`. If provided, the output :math:`s` and output vector :math:`l` are also split such that:
 
     .. math::
-        s = lu = \tilde{l}\tilde{u} + s0,\qquad
+        s = l^Tu = \tilde{l}^T\tilde{u} + s0,\qquad
         \tilde{l} = l_{F_U},\qquad
-        s0 = l_{D_U}u_{D_U}.
+        s0 = l_{D_U}^Tg_{D_U}.
 
     Args:
         B :
@@ -98,7 +98,7 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sp
         V :
             Test space including the dof split :math:`F_V,D_V`. The dirichlet dofs of the test space are removed in the final system, enforcing homogeneous Dirichlet constraints on the test space.
         l :
-            Row vector for computing the output :math:`s = lu`, i.e. ``l.shape = (1,U.dim)``.
+            Row vector for computing the output :math:`s = l^Tu`, i.e. ``l.shape = (U.dim,)``.
     
     Returns
     ---------
@@ -107,7 +107,7 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sp
         f :
             Reduced right-hand side :math:`\tilde{f}` on the free test dofs, i.e. ``f.shape = (sum(V.dofs),)``.
         l :
-            Reduced row vector :math:`\tilde{l}`, i.e. ``l.shape = (1,sum(U.dofs))``.
+            Reduced row vector :math:`\tilde{l}`, i.e. ``l.shape = (sum(U.dofs),)``.
         s0 :
             Contribution to the output by the Dirichlet boundaries.
     """    
@@ -123,8 +123,8 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sp
         return B.compress(), f.compress()
 
     l = wrap_affinelinear(l)
-    s0 = sum([l.apply2data(lambda lq: lq[:,bc.dofs]) @ bc for bc in U.bcs])
-    l = l.apply2data(lambda lq: lq[:,U.dofs])
+    s0 = sum([l.apply2data(lambda lq: lq[bc.dofs]) @ bc for bc in U.bcs])
+    l = l.apply2data(lambda lq: lq[U.dofs])
     
     return B.compress(), f.compress(), l.compress(), s0.compress()
 
