@@ -56,7 +56,8 @@ def assemble_vector(l: ufl.Form | AffineObject[Mu, ufl.Form]) -> np.ndarray | Af
 def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sparray], 
                       f: np.ndarray | AffineObject[Mu, np.ndarray], 
                       U: FEniCSxSpaceWithDirichletBCs, 
-                      V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray]]:
+                      V: FEniCSxSpaceWithDirichletBCs,
+                      l: np.ndarray | AffineObject[Mu, np.ndarray] | None = None) -> tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray]] | tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray], AffineLinear[Mu, np.ndarray], AffineLinear[Mu, np.ndarray]]:
     r"""Apply Dirichlet boundary conditions to a linear system.
     
     Starting from the system assembled on the full trial/test spaces including dirichlet boundary conditions,
@@ -107,19 +108,48 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sp
         - sum( B.apply2data(lambda Bq: Bq[V.dofs,:][:,bc.dofs]) @ bc for bc in U.bcs )
     B = B.apply2data(       lambda Bq: Bq[V.dofs,:][:,U.dofs] )
     
-    return B.compress(), f.compress()
+    if l is None:
+        return B.compress(), f.compress()
+
+    l = wrap_affinelinear(l)
+    s0 = sum([l.apply2data(lambda lq: lq[:,bc.dofs]) @ bc for bc in U.bcs])
+    l = l.apply2data(lambda lq: lq[:,U.dofs])
+    
+    return B.compress(), f.compress(), l.compress(), s0.compress()
+
+# def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sparray], 
+#                       f: np.ndarray | AffineObject[Mu, np.ndarray], 
+#                       U: FEniCSxSpaceWithDirichletBCs, 
+#                       V: FEniCSxSpaceWithDirichletBCs,
+#                       l: np.ndarray | AffineObject[Mu, np.ndarray] | None = None) -> tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray]] | tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray], AffineLinear[Mu, np.ndarray], AffineLinear[Mu, np.ndarray]]:
+#     B = wrap_affinelinear(B)
+#     f = wrap_affinelinear(f)
+    
+#     f = f.apply2data(       lambda fq: fq[V.dofs]             ) \
+#         - sum( B.apply2data(lambda Bq: Bq[V.dofs,:][:,bc.dofs]) @ bc for bc in U.bcs )
+#     B = B.apply2data(       lambda Bq: Bq[V.dofs,:][:,U.dofs] )
+    
+#     if l is None:
+#         return B.compress(), f.compress()
+    
+#     l = wrap_affinelinear(l)
+#     s0 = sum([l.apply2data(lambda lq: lq[bc.dofs]) @ bc for bc in U.bcs])
+#     l = l.apply2data(lambda lq: lq[U.dofs])
+    
+#     return B.compress(), f.compress(), l.compress(), s0.compress()
 
 
 def assemble_system(B: ufl.Form | AffineObject[Mu, ufl.Form],
                     f: ufl.Form | AffineObject[Mu, ufl.Form],
                     U: FEniCSxSpaceWithDirichletBCs, 
-                    V: FEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu,csr_array], AffineLinear[Mu,np.ndarray]]:
+                    V: FEniCSxSpaceWithDirichletBCs,
+                    l: np.ndarray | AffineObject[Mu, np.ndarray] | None = None) -> tuple[AffineLinear[Mu,csr_array], AffineLinear[Mu,np.ndarray]]:
     r"""Assemble a (parametric) linear system and applying Dirichlet boundary conditions.
     
     Just a wrapper around `assemble_matrix`, `assemble_vector` and `apply_dirichletbc` for convenience.
     """
     
-    return apply_dirichletbc(assemble_matrix(B), assemble_vector(f), U, V)
+    return apply_dirichletbc(assemble_matrix(B), assemble_vector(f), U, V, l)
 
 
 def weak_problem(msh: mesh.Mesh, 
