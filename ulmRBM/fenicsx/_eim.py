@@ -14,11 +14,11 @@ __all__ = [
 
 def _get_points(U: fem.FunctionSpace):
     y = [None]
-    def _get_points(x):
+    def __get_points(x):
         y[0] = x.copy()
         dummy = np.zeros(U.value_shape).reshape(-1,1)
         return np.zeros((dummy.shape[0],x.shape[1]))
-    fem.Function(U).interpolate(_get_points)
+    fem.Function(U).interpolate(__get_points)
     return y[0]
 
 def interpolate_function_eim(U: fem.FunctionSpace, 

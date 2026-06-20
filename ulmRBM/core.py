@@ -38,7 +38,7 @@ from __future__ import annotations
 __all__ = [
     'Mu', 'Data', 'Matrix', 'Vector', 'NO_MU',
     'ParametricObject', 'ParametricLinear', 'TrivialParametric',
-    'wrap_linear', 'wrap_scalar', 'unwrap',
+    'wrap_linear', 'wrap_scalar', 'unwrap', 'KRON_AVAILABLE',
 ]
 
 import numpy as np
@@ -62,8 +62,9 @@ Matrix: TypeAlias = np.ndarray | sparray | LinearOperator
 try:
     import kron
     Matrix: TypeAlias = Matrix | kron.kron_base
+    KRON_AVAILABLE = True
 except ImportError:
-    pass
+    KRON_AVAILABLE = False
 
     
 Vector: TypeAlias = np.ndarray

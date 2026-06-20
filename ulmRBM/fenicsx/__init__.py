@@ -17,6 +17,9 @@ Classes
    
     AffineDirichletBC
     FEniCSxSpaceWithDirichletBCs
+    SpaceTimeKey
+    SpaceTimeAffineDirichletBC
+    SpaceTimeFEniCSxSpaceWithDirichletBCs
     
 Functions
 ----------------
@@ -25,6 +28,7 @@ Functions
    
     free_dofs
     interpolate_function_eim
+    zero_overlapping_space_time_bcs
 """
 
 from ._dirichletbcs import *

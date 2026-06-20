@@ -31,6 +31,7 @@ Heat Equation Problems
     :toctree: generated/
     
     simple_timestepping_heat
+    simple_heat
     
 Wave Equation Problems
 ----------------------
