@@ -97,8 +97,6 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sp
             Trial space including the Dirichlet boundary data :math:`g` and the and the dof split :math:`F_U,D_U`.
         V :
             Test space including the dof split :math:`F_V,D_V`. The dirichlet dofs of the test space are removed in the final system, enforcing homogeneous Dirichlet constraints on the test space.
-        l :
-            Row vector for computing the output :math:`s = l^Tu`, i.e. ``l.shape = (U.dim,)``.
     
     Returns
     ---------
