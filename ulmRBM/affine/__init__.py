@@ -22,6 +22,7 @@ Utilities
 .. autosummary::
     :toctree: generated/
     
+    affine_kron
     wrap_affinelinear
     multiply_theta
     ScalarComponentList

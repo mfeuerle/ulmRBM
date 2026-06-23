@@ -12,15 +12,6 @@ __all__ = [
     'interpolate_function_eim',
 ]
 
-def _get_points(U: fem.FunctionSpace):
-    y = [None]
-    def __get_points(x):
-        y[0] = x.copy()
-        dummy = np.zeros(U.value_shape).reshape(-1,1)
-        return np.zeros((dummy.shape[0],x.shape[1]))
-    fem.Function(U).interpolate(__get_points)
-    return y[0]
-
 def interpolate_function_eim(U: fem.FunctionSpace, 
                              func: Callable[[Mu, np.ndarray], np.ndarray], 
                              mus: Iterable[Mu],
@@ -42,7 +33,7 @@ def interpolate_function_eim(U: fem.FunctionSpace,
         tol :
             The tolerance :math:`\varepsilon_{\text{tol}}` for the EIM approximation, see `empirical_interpolation`.
     """
-    points = _get_points(U).T
+    points = utils.get_interpolation_points(U).T
     f = lambda mu, x: func(mu, x.T).T
     func_eim = AffineObject(empirical_interpolation(f, mus, points, Nmax=Nmax, tol=tol, continuous=False, residual=True))
     func_eim = func_eim.apply2data(lambda dataq: lambda x, data=dataq: data.T)

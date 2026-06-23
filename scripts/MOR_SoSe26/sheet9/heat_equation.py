@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 from ulmRBM.affine import AffineFunction, AffineObject
 from ulmRBM.fenicsx import norms
-from ulmRBM.fenicsx.problems import simple_timestepping_heat
+from ulmRBM.fenicsx.problems import simple_heat_timestepping
 from ulmRBM.solver import DirectSolver
 from ulmRBM.fom import *
 from ulmRBM.rom import *
@@ -26,7 +26,7 @@ mu_range = (0.01, 1.0)
 f = AffineFunction([1.0], [lambda t: lambda x: np.ones(x.shape[1])])
 u0 = AffineObject([1.0], [lambda x:  np.sin(np.pi*x[0])])
 
-A, M, f, u0, U = simple_timestepping_heat(Omega, nx, f, u0)
+A, M, f, u0, U = simple_heat_timestepping(Omega, nx, f, u0)
 U_H10 = norms.h10(U, DirectSolver(factorize=True))
 
 LI, LE, b, t = crank_nicolson(A, M, f, I, K)

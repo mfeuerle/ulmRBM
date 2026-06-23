@@ -13,6 +13,7 @@ __all__ = [
     'wrap_affinelinear',
     'ScalarComponentList',
     'multiply_theta',
+    'affine_kron'
 ]
 
 from numbers import Number
@@ -20,7 +21,7 @@ from collections.abc import Iterable, MutableSequence, Callable, Sequence
 from enum import IntEnum
 import numpy as np
 
-from ulmRBM.core import Mu, Data, ParametricObject, ParametricLinear, TrivialParametric, wrap_scalar, unwrap
+from ulmRBM.core import Mu, Data, Matrix, Vector, ParametricObject, ParametricLinear, TrivialParametric, wrap_scalar, unwrap
 
 
 class _ScaledScalar(ParametricObject[Mu, float]):
@@ -709,6 +710,66 @@ class AffineFunction(AffineObject[Mu,Callable]):
                 val += theta_q * data_q(*args, **kwargs)
             return val
         return func
+    
+    
+def affine_kron(A: Matrix | AffineLinear[Mu, Matrix], B: Matrix | AffineLinear[Mu, Matrix], format: str | None = None) -> AffineLinear[Mu, Matrix]:
+    r"""Kronecker product of two (possible affine) matrices.
+
+        Let :math:`A = \sum_i \theta_i^A(\mu) A_i \in \R^{m \times n}` and :math:`B = \sum_k \theta_k^B(\mu) B_k \in \R^{p \times q}` be two affine matrices. Then the Kronecker product is given by
+        
+        .. math::
+            A \otimes B = \sum_{i,k} \theta_i^A(\mu) \theta_k^B(\mu) (A_i \otimes B_k) \in \R^{mp \times nq},
+            
+        with
+        
+        .. math::
+            A_i \otimes B_k = \begin{pmatrix} A_i[0,0] B_k & \cdots & A_i[0,n-1] B_k \\ \vdots & \ddots & \vdots \\ A_i[m-1,0] B_k & \cdots & A_i[m-1,n-1] B_k \end{pmatrix}.
+            
+    Args:
+        A:
+            First matrix
+        B:
+            Second matrix
+        format:
+            Format of the resulting Kronecker product. Can be one of ``'implicit'`` (implicitly store the Kronecker product using the `kron` package), ``'sparse'`` (assembeling the full matrix as a sparse matrix) or ``'dense'`` (assembeling the full matrix as a dense matrix). If None, the format will be chosen automatically, with ``'implicit'`` being the default if the `kron` package is available, otherwise ``'sparse'`` if at least one of the input matrices is sparse.
+    """
+    A = wrap_affinelinear(A)
+    B = wrap_affinelinear(B)
+    from ulmRBM.core import KRON_AVAILABLE
+    
+    if format is None:
+        if KRON_AVAILABLE: 
+            format = 'implicit'
+        elif all([sp.sparse.issparse(Aq) for Aq in A.data]) or all([sp.sparse.issparse(Bq) for Bq in B.data]):
+            format = 'sparse'
+        else:
+            format = 'dense'
+            
+    if format not in ['implicit', 'sparse', 'dense']:
+        raise ValueError(f"Invalid format '{format}'. Must be one of 'implicit', 'sparse' or 'dense'.")
+    
+    if format == 'implicit' and not KRON_AVAILABLE:
+        raise ValueError(f"Implicit Kronecker product is not available. Please install the 'kron' package.")
+    
+    if format == 'implicit':
+        import kron
+        _kron = kron.kron
+    elif format == 'sparse':
+        import scipy as sp
+        _kron = sp.sparse.kron
+    else:
+        _kron = np.kron
+        
+    from ulmRBM.affine import multiply_theta
+    
+    theta = []
+    data  = []
+    for (Aq_theta, Aq) in A:
+        for (Bq_theta, Bq) in B:
+            theta.append(multiply_theta(Aq_theta, Bq_theta))
+            data.append(_kron(Aq, Bq))
+
+    return AffineLinear(theta, data)
     
     
 def wrap_affinelinear(data: Data | AffineLinear[Mu, Data]) -> AffineLinear[Mu, Data]:

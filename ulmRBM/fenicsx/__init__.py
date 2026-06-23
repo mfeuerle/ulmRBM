@@ -9,29 +9,40 @@ Submodules
    utils
    problems
    norms
-
-Classes
--------
+   
+Basic Problems
+--------------
 .. autosummary::
    :toctree: generated/
-   
+    
     AffineDirichletBC
     FEniCSxSpaceWithDirichletBCs
+    free_dofs
+    apply_dirichletbc
+    assemble_system
+    
+Space-Time Problems
+-------------------
+.. autosummary::
+    :toctree: generated/
+    
+    interpolate_space_time
     SpaceTimeKey
     SpaceTimeAffineDirichletBC
     SpaceTimeFEniCSxSpaceWithDirichletBCs
-    
-Functions
-----------------
+    zero_overlapping_space_time_bcs
+    apply_dirichletbc_space_time
+   
+Empirical Interpolation Method (EIM)
+------------------------------------
 .. autosummary::
    :toctree: generated/
-   
-    free_dofs
+
     interpolate_function_eim
-    zero_overlapping_space_time_bcs
 """
 
-from ._dirichletbcs import *
+from ._basic import *
+from ._space_time import *
 from ._eim import *
 
 _submodules = [

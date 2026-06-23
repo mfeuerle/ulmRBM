@@ -5,24 +5,32 @@ Functions
 .. autosummary::
    :toctree: generated/
    
+    assemble_matrix
+    assemble_vector
     create_measure
     interpolate_function
     dirichletbc
     change_element
     plot_pyvista
     isclose
+    get_interpolation_points
 """
 
 
 import numpy as np
 import scipy as sp
 from numbers import Number
+from scipy.sparse import csr_array
 
 from dolfinx import mesh, fem, plot
 import ufl
 import basix.ufl
 
 import pyvista as pv
+
+from ulmRBM.core import Mu
+from ulmRBM.affine import AffineObject, AffineLinear
+from ulmRBM.affine._affine import _ConstructNew
 
 
 __all__ = [
@@ -32,6 +40,9 @@ __all__ = [
     'change_element',
     'plot_pyvista',
     'isclose',
+    'get_interpolation_points',
+    'assemble_matrix',
+    'assemble_vector',
 ]
 
 def create_measure(integral_type: str, domain: mesh.Mesh, tdim: int, entities: list, tags = None) -> ufl.Measure:
@@ -70,7 +81,7 @@ def create_measure(integral_type: str, domain: mesh.Mesh, tdim: int, entities: l
 def interpolate_function(space: fem.FunctionSpace, func: np.ndarray | sp.sparse.sparray | Number | fem.Constant | fem.Function | fem.Expression | object) -> fem.Function | fem.Constant:
     r""" Interpolate a given function into a FEniCSx function space.
     
-    As FEniCSx as one heck of a mess of different objects which makes it very difficult to work with, this function tries to extend the functionality of FEniCSx to interpolate a wide range of different objects into a FEniCSx function space and thus provide one function to rule them all.
+    As FEniCSx has one heck of a mess of different objects which makes it very difficult to work in a unified syntax, this function tries to extend the functionality of FEniCSx to interpolate a wide range of different objects into a FEniCSx function space by a coherent function call and thus provide one function to rule them all.
     
     Args:
         space:
@@ -81,7 +92,7 @@ def interpolate_function(space: fem.FunctionSpace, func: np.ndarray | sp.sparse.
     
     if sp.sparse.issparse(func): func = func.toarray()
     if isinstance(func, Number) or isinstance(func, np.ndarray):
-        func = fem.Constant(space.mesh, func)
+        func = fem.Constant(space.mesh, np.double(func))
     if isinstance(func, fem.Constant):
         return func
     if isinstance(func, fem.Function):
@@ -234,3 +245,53 @@ def isclose(x: np.ndarray, reference_points: np.ndarray, *args, **kwargs) -> np.
     assert reference_points.shape[1] == x.shape[0]
     
     return np.logical_or.reduce([np.isclose(xi, di, *args, **kwargs) for d in reference_points for (xi,di) in zip(x,d)])
+
+
+def get_interpolation_points(U: fem.FunctionSpace) -> np.ndarray:
+    r"""Get the interpolation points of a FEniCSx function space.
+    
+    When using `dolfinx.fem.Function.interpolate`, the interpolated function is evaluated at several interpolation points that depend on the underlying function space. This function returns the interpolation points of a given FEniCSx function space.
+    """
+    y = [None]
+    def __get_points(x):
+        y[0] = x.copy()
+        dummy = np.zeros(U.value_shape).reshape(-1,1)
+        return np.zeros((dummy.shape[0],x.shape[1]))
+    fem.Function(U).interpolate(__get_points)
+    return y[0]
+
+
+def assemble_matrix(B: ufl.Form | AffineObject[Mu, ufl.Form]) -> csr_array | AffineLinear[Mu, csr_array]:
+    r"""Assemble the matrix of a (parametric) bilinear form.
+    
+    Args:
+        B:
+            (Parametric) bilinear form.
+            
+    Returns:
+        Assembled matrix representation as a (parametric) sparse array.
+    """
+    
+    assemble = lambda B: csr_array(fem.assemble_matrix(fem.form(B)).to_scipy())
+    if isinstance(B, AffineObject):
+        return AffineLinear(B.compress().apply2data(assemble))
+    else:
+        return assemble(B)
+
+
+def assemble_vector(l: ufl.Form | AffineObject[Mu, ufl.Form]) -> np.ndarray | AffineLinear[Mu,np.ndarray]:
+    r"""Assemble the vector of a (parametric) linear form.
+    
+    Args:
+        l:
+            (Parametric) linear form.
+            
+    Returns:
+        Assembled vector representation as a (parametric) numpy array.
+    """
+    
+    assemble = lambda l: fem.assemble_vector(fem.form(l)).array
+    if isinstance(l, AffineObject):
+        return AffineLinear(l.compress().apply2data(assemble))
+    else:
+        return assemble(l)

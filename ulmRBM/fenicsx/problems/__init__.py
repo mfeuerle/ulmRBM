@@ -1,27 +1,11 @@
 r""" Collection of some standard problems created with FEniCSx.
-
-Utility Functions
------------------
-.. autosummary::
-    :toctree: generated/
-    
-    assemble_matrix
-    assemble_vector
-    apply_dirichletbc
-    assemble_system
-    
-Abstract Problems
-------------------
-.. autosummary::
-   :toctree: generated/
-   
-    weak_problem
     
 Elliptic Problems
 -----------------
 .. autosummary::
     :toctree: generated/
     
+    weak_problem
     simple_elliptic
     thermal_block
     
@@ -30,8 +14,9 @@ Heat Equation Problems
 .. autosummary::
     :toctree: generated/
     
-    simple_timestepping_heat
+    heat_equation
     simple_heat
+    simple_heat_timestepping
     
 Wave Equation Problems
 ----------------------
@@ -41,13 +26,16 @@ Wave Equation Problems
     simple_wave
 """
 
-from ._base import *
 from ._elliptic import *
 from ._heat import *
 from ._wave import *
 
 _submodules = [
 ]
+
+# for backwards compatibility, we import
+from ulmRBM.fenicsx import apply_dirichletbc, assemble_system
+from ulmRBM.fenicsx.utils import assemble_matrix, assemble_vector
 
 import importlib as _importlib
 for _submodule in _submodules:

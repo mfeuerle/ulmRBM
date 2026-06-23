@@ -34,7 +34,7 @@ from scipy.sparse.linalg import LinearOperator, cg, gmres, lsmr
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
-from ulmRBM.core import Matrix, Vector
+from ulmRBM.core import Matrix, Vector, KRON_AVAILABLE
 
 
 # Probably should any mechanism to check for convergence, right now you wont get informed at all
@@ -119,43 +119,57 @@ class DirectSolver(Solver):
                 return self._solveA(b)
             else:
                 self._A = A
-                
-                if not (isinstance(A, np.ndarray) or sp.sparse.issparse(A)):
-                    raise TypeError("Matrix A must be a NumPy array or SciPy sparse array.")
-                
-                if sp.sparse.issparse(A):
-                    if A.shape[0] != A.shape[1]:
-                        from warnings import warn
-                        warn("no sparse factorization for rectangular matrices; converting to dense", sp.sparse.SparseEfficiencyWarning)
-                        A = A.toarray()
-                    else:
-                        A = A.tocsc()
-                        self._solveA = sp.sparse.linalg.factorized(A)
-                if isinstance(A, np.ndarray):
-                    Q, R = np.linalg.qr(A, mode='reduced')
-                    self._solveA = lambda b: sp.linalg.solve_triangular(R, Q.T @ b, lower=False)
-                
-                return self._solveA(b)
         
-        if sp.sparse.issparse(A):
-            A = A.tocsc()
-            if A.shape[0] == A.shape[1]:
-                if sp.sparse.issparse(b): b = b.tocsc()
-                solver = lambda A, b, x0: sp.sparse.linalg.spsolve(A, b)
-            else:
+        if KRON_AVAILABLE:
+            import kron
+            if kron.iskronrelated(A):
                 from warnings import warn
-                warn("no direct least-squares solver for sparse matrices; converting to dense", sp.sparse.SparseEfficiencyWarning)
-                A = A.toarray()
-                solver = lambda A, b, x0: np.linalg.lstsq(A, b, rcond=None)[0]
-        elif isinstance(A, np.ndarray):
-            if A.shape[0] == A.shape[1]:
-                solver = lambda A, b, x0: np.linalg.solve(A, b)
-            else:
-                solver = lambda A, b, x0: np.linalg.lstsq(A, b, rcond=None)[0]
-        else:
-            raise TypeError("Matrix A must be a NumPy array or SciPy sparse array.")
+                warn("Efficentcy warning: Assembeling implicitly stored Kronecker product", UserWarning)
+                A = A.assemble()
+                
+        if isinstance(A, LinearOperator):
+            from warnings import warn
+            warn("Efficentcy warning: Assembeling implicitly defined LinearOperator", UserWarning)
+            A = A @ np.eye(A.shape[1])
         
-        return _WrapCallableAsSolver(solver)(A, b, x0)  # mostly wrap it to handle multiple rhs correctly
+        if self.factorize:        
+            if not (isinstance(A, np.ndarray) or sp.sparse.issparse(A)):
+                raise TypeError("Matrix A must be a NumPy array or SciPy sparse array.")
+            
+            if sp.sparse.issparse(A):
+                if A.shape[0] != A.shape[1]:
+                    from warnings import warn
+                    warn("no sparse factorization for rectangular matrices; converting to dense", sp.sparse.SparseEfficiencyWarning)
+                    A = A.toarray()
+                else:
+                    A = A.tocsc()
+                    self._solveA = sp.sparse.linalg.factorized(A)
+            if isinstance(A, np.ndarray):
+                Q, R = np.linalg.qr(A, mode='reduced')
+                self._solveA = lambda b: sp.linalg.solve_triangular(R, Q.T @ b, lower=False)
+            
+            return self._solveA(b)
+        
+        else:
+            if sp.sparse.issparse(A):
+                A = A.tocsc()
+                if A.shape[0] == A.shape[1]:
+                    if sp.sparse.issparse(b): b = b.tocsc()
+                    solver = lambda A, b, x0: sp.sparse.linalg.spsolve(A, b)
+                else:
+                    from warnings import warn
+                    warn("no direct least-squares solver for sparse matrices; converting to dense", sp.sparse.SparseEfficiencyWarning)
+                    A = A.toarray()
+                    solver = lambda A, b, x0: np.linalg.lstsq(A, b, rcond=None)[0]
+            elif isinstance(A, np.ndarray):
+                if A.shape[0] == A.shape[1]:
+                    solver = lambda A, b, x0: np.linalg.solve(A, b)
+                else:
+                    solver = lambda A, b, x0: np.linalg.lstsq(A, b, rcond=None)[0]
+            else:
+                raise TypeError("Matrix A must be a NumPy array or SciPy sparse array.")
+            
+            return _WrapCallableAsSolver(solver)(A, b, x0)  # mostly wrap it to handle multiple rhs correctly
 
 
 class IterativeSolver(Solver):

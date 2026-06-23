@@ -6,7 +6,7 @@ import ufl
 
 from ulmRBM.core import Mu
 from ulmRBM.affine import AffineObject
-from ulmRBM.fenicsx import utils, FEniCSxSpaceWithDirichletBCs
+from ulmRBM.fenicsx import utils, FEniCSxSpaceWithDirichletBCs, assemble_system
 from ulmRBM.fenicsx.problems import weak_problem
 
 
@@ -14,12 +14,12 @@ __all__ = [
     'simple_wave',
 ]
 
-def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1], 
-                nt:int=10, nx:list[int]=[10], 
+def simple_wave(K:int=10, 
+                nx:list[int]=[10], 
                 f: float | AffineObject = 1, 
+                g: float | AffineObject = 0, 
                 u0: float | AffineObject = 0, 
                 u1: float | AffineObject = 0, 
-                g: float | AffineObject = 0, 
                 exact_sol = None, exact_mu: float = 1.0) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Parametric wave problem.
     
@@ -44,33 +44,33 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
         f_\mu(v) := (f_\mu, v)_{L^2(I\times\Omega)} + (u1_\mu, v(0))_{L^2(\Omega)}
 
     Args:
-        I:
-            Time interval of the problem.
-        Omega:
-            Spatial domain of the problem, which is assumed to be a box domain with ``Omega[0]`` being the lower left corner and ``Omega[1]`` being the upper right corner, where ``len(Omega[0])`` is the spatial dimension :math:`d`.
-        nt: 
+        K: 
             Number of mesh cells in the time direction.
         nx: 
             Number of mesh cells in each spatial direction, where ``len(nx)`` is the spatial dimension :math:`d`.
         f:
             (Parametric) right-hand side. Any object compatible with `utils.interpolate_function`, or an affine decomposition compatible with `utils.interpolate_function`.
+        g:
+            (Parametric) Dirichlet boundary condition on :math:`I\times\partial\Omega`. Any object compatible with `utils.interpolate_function`, or an affine decomposition compatible with `utils.interpolate_function`.
         u0:
             (Parametric) Initial condition for :math:`u(0)`. Any object compatible with `utils.interpolate_function`, or an affine decomposition compatible with `utils.interpolate_function`.
         u1:
             (Parametric) Initial velocity for :math:`u_t(0)`. Any object compatible with `utils.interpolate_function`, or an affine decomposition compatible with `utils.interpolate_function`.
-        g:
-            (Parametric) Dirichlet boundary condition on :math:`I\times\partial\Omega`. Any object compatible with `utils.interpolate_function`, or an affine decomposition compatible with `utils.interpolate_function`.
         exact_sol:
             Exact solution of the problem, which can be parameter-dependent. If given, :math:`f,u0,u1,g` are ignored and calculated from the exact solution instead. Compatible with `utils.interpolate_function`.
         exact_mu:
             Parameter value at which the exact solution is given.
-            
-    Returns
-    -------
-    See `weak_problem` for details on the return values.
     """
     
-    I = np.asarray(I).reshape(-1,1)
+    if np.isscalar(nx): nx = [nx]
+    if len(nx) == 1:
+        Omega = [0,1]
+    elif len(nx) == 2:
+        Omega = [[0,0], [1,1]]
+    else:
+        raise ValueError("Only 1D, 2D in space are supported.")
+    
+    I = np.asarray([0,1]).reshape(-1,1)
     Omega = np.asarray(Omega)
     if Omega.ndim == 1:
         Omega = Omega.reshape(-1,1)
@@ -78,9 +78,9 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
     min_nt = np.inf
     for i in range(Omega.shape[1]):
         min_nt = min(min_nt, np.ceil((I[1]-I[0])/((Omega[1][i]-Omega[0][i])/(nx[i-1]+1))))
-    print(f"To ensure the CFL condition, nt should be at least ``mu * {min_nt[0]:.2f}``.")
+    print(f"To ensure the CFL condition, K should be at least ``mu * {min_nt[0]:.2f}``.")
     
-    n = [nt] + nx
+    n = [K] + nx
     Q = np.hstack([I, Omega])
     
     if len(n) == 2:
@@ -101,14 +101,6 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
     if exact_sol is not None:
         data = (exact_sol, exact_mu)
     else:
-        if not isinstance(f, AffineObject): 
-            f = AffineObject([1.0], [f])  # right-hand side
-        if not isinstance(u0, AffineObject): 
-            u0 = AffineObject([1.0], [u0])  # initial condition u(0)
-        if not isinstance(u1, AffineObject): 
-            u1 = AffineObject([1.0], [u1])  # initial velocity u_t(0)
-        if not isinstance(g, AffineObject): 
-            g = AffineObject([1.0], [g])  # boundary condition on IxGamma
         data = (f, [u0, g], [-u1])
     
     A = AffineObject([1.0], [np.diag([1.0] + (gdim-1)*[0.0])])  # u_tt
@@ -116,4 +108,7 @@ def simple_wave(I:list[float]=[0,1], Omega:list[float]=[0,1],
     b = AffineObject([0.0], [np.ones(gdim)])
     c = AffineObject([0.0], [1.0])
     
-    return weak_problem(msh, (A,b,c), data, dbdry, nbdry)
+    B, f, U, V = weak_problem(msh, (A,b,c), data, dbdry, nbdry)
+    B, f = assemble_system(B, f, U, V)
+    
+    return B, f, U, V
