@@ -17,6 +17,9 @@ Standard Models
     Model
     FOM
     GalerkinFOM
+    PrimalDualModel
+    PrimalDualFOM
+    PrimalDualGalerkinFOM
     
 Time-Stepping Models
 --------------------

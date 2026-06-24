@@ -100,7 +100,6 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     def __init__(self, fom: StationaryTimeSteppingGalerkinFOM[Mu],
                  LI_stability: StabilityEstimator[Mu],
                  LE_continuity: ContinuityEstimator[Mu],
-                 W_basis: Vector = None,
                  solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver(factorize=True),
                  residual: None | str = None):
         r"""
@@ -111,8 +110,6 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
                 Stability estimator for the implicit operator ``fom.LI``.
             LE_continuity:
                 Continuity estimator for the explicit operator ``fom.LE``.
-            W_basis:
-                Initial reduced trial basis. If ``None``, starts with an empty basis.
             solver:
                 Solver for the implicit operations. If ``None``, uses a direct solver with factorization.
             residual: 
@@ -140,7 +137,6 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
         self._LI_stability_estimator  = LI_stability
         self._LE_continuity_estimator = LE_continuity
         self._solver = solver
-        if W_basis is not None: self.add_basis(W_basis)
         
         if residual == 'affine':
             # self._residual_evaluator = AffineTimeSteppingResidualNormEvaluator(self)
@@ -288,6 +284,9 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
                 Parameter value at which to estimate the error.
             u:
                 Reduced-order solution. If ``None``, computed via :meth:`solve`.
+                
+        Returns:
+            Error bound :math:`\Delta = (\Delta_0, \ldots, \Delta_K) \in \mathbb{R}^{K+1}`.
             
         .. note::
             Due to the square-root effect, the bounds are only accurate up to ``sqrt(eps)`` where ``eps`` is the machine precision. Thus, for smaller errors, the lower bounds might be wrong and the upper bounds might be overestimated.

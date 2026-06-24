@@ -18,7 +18,7 @@ import numpy as np
 
 from ulmRBM.core import NO_MU, Mu, Vector
 from ulmRBM.affine import AffineLinear
-from ulmRBM.fom import TimeSteppingSolution
+from ulmRBM.fom import TimeSteppingSolution, PrimalDualModel
 
 if TYPE_CHECKING:
     from ulmRBM.rom import ROM, StationaryTimeSteppingGalerkinROM
@@ -50,12 +50,31 @@ class ResidualNormEvaluator(Generic[Mu]):
     def __init__(self, rom: ROM[Mu]):
         self.rom = rom
         self._initialize()
+        
+        if isinstance(rom, PrimalDualModel):
+            self._output = ValueError("Output norm should never be accessed for a primal-dual model, how did you even get here?")
+        elif rom.fom.l is None:
+            self._output = ValueError("Residual norm evaluator cannot compute output error since the FOM has no output functional.")
+        else:
+            try:
+                self._initialize_output()
+                self._output = True
+            except Exception as e:
+                self._output = e
+                
         if rom.U_basis is not None: self.add_basis(rom.U_basis)
         
     def _initialize(self):
         r"""
         Setup the the norm evaluater.
         """
+        pass
+    
+    def _initialize_output(self) -> bool:
+        r"""
+        Setup the the norm evaluater for computing the dual norm of the output functional.
+        """
+        
         pass
         
     def add_basis(self, basis: Vector):
@@ -95,6 +114,26 @@ class ResidualNormEvaluator(Generic[Mu]):
         """
         ...
     
+    
+    def dual_norm_output(self, mu: Mu) -> float:
+        r"""
+        Compute the dual norm of the output functional at parameter :math:`\mu`, i.e.
+        
+        .. math::
+            \|l(\mu)\|_{U'}
+            
+        where :math:`l(\mu)` is the output functional of the full-order model and :math:`U'` the dual space of the trial space.
+        """
+        if self._output is True:
+            self._dual_norm_output(mu)
+        else:
+            raise self._output
+        
+    @abstractmethod
+    def _dual_norm_output(self, mu: Mu) -> float:
+        ...
+        
+    
     def __repr__(self):
         return f"<{self.__class__.__name__} for {repr(self.rom)}>"
     
@@ -113,6 +152,9 @@ class FullResidualNormEvaluator(ResidualNormEvaluator[Mu]):
     
     def dual_norm_rhs(self, mu: Mu) -> float:
         return self.rom.fom.V.dual.norm(mu, self.rom.fom.f(mu))
+    
+    def _dual_norm_output(self, mu: Mu) -> float:
+        return self.rom.fom.U.dual.norm(mu, self.rom.fom.l(mu))
     
     
     
@@ -147,6 +189,13 @@ class AffineResidualNormEvaluator(ResidualNormEvaluator[Mu]):
         self._r = self.rom.fom.V.dual.riesz(NO_MU, np.column_stack(self.rom.fom.f.data))
         self._R = self.rom.fom.V.inner(NO_MU, self._r)
         
+    def _initialize_output(self):
+        if self.rom.fom.U.dual.is_parametric:
+            raise ValueError("Dual norm of the output is not affine as the FOMs has a parameter-dependent trial space inner product.")
+        
+        L = self.rom.fom.U.dual.riesz(NO_MU, np.column_stack(self.rom.fom.l.data))
+        self._L = self.rom.fom.U.dual.inner(NO_MU, L)
+        
     def add_basis(self, basis: Vector):
         m = self.rom.fom.shape[0]
         r_new = np.empty((m, basis.shape[1], self._QB))
@@ -179,6 +228,9 @@ class AffineResidualNormEvaluator(ResidualNormEvaluator[Mu]):
         theta_f = self._theta_r(mu, None)
         return np.sqrt(abs(theta_f.T @ self._R[:self._Qf, :self._Qf] @ theta_f))
     
+    def _dual_norm_output(self, mu: Mu) -> float:
+        theta_l = np.array([theta(mu) for theta in self.rom.fom.l.theta]).reshape(-1)
+        return np.sqrt(abs(theta_l.T @ self._L @ theta_l))
     
     
     

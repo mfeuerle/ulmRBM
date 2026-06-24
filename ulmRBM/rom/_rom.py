@@ -4,6 +4,8 @@ from __future__ import annotations
 __all__ = [
     'ROM',
     'GalerkinROM',
+    'PrimalDualROM',
+    'PrimalDualGalerkinROM',
 ]
 
 from collections.abc import Callable
@@ -13,11 +15,11 @@ from warnings import warn
 
 from ulmRBM.core import Mu, Matrix, Vector
 from ulmRBM.solver import Solver, DirectSolver
-from ulmRBM.fom import Model, FOM, GalerkinFOM
+from ulmRBM.fom import Model, FOM, GalerkinFOM, PrimalDualModel
 from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 from ulmRBM.affine import AffineLinear, wrap_affinelinear
 
-from ._constants import StabilityEstimator, ContinuityEstimator, ExactContinuity, EfficientConstantEstimator
+from ._constants import StabilityEstimator, ContinuityEstimator, ExactStability, ExactContinuity, EfficientConstantEstimator
 from .__residual import ResidualNormEvaluator, AffineResidualNormEvaluator, FullResidualNormEvaluator
 
 class ROM(FOM[Mu]):
@@ -126,9 +128,8 @@ class ROM(FOM[Mu]):
                  fom: Model[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
-                 U_basis: AffineLinear[Mu, Vector] | Vector = None,
                  trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
-                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver(),
+                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = None,
                  residual: None | str = None):
         r"""
         Args:
@@ -138,8 +139,6 @@ class ROM(FOM[Mu]):
                 Estimator for the FOM stability constant. Required for online-efficient residual-based error bounds, see `error_bound` and `error_bounds` (expept for ``alb``).
             continuity:
                 Estimator for the FOM continuity constant. Not required for `error_bound`, but for all other online-efficient error bounds, see `error_bounds` (exept for ``aub``). Provide an online-efficient implementation if you want to use any of thes error bounds in an online efficient way. If ``None``, defaults to `ExactContinuity`.
-            U_basis:
-                Initial trial space basis :math:`U_N` of shape  ``(n, N)``. If ``None``, starts with an empty basis.
             trial2test:
                 Trial-to-Test operator :math:`T(\mu)` to define the test space basis via :math:`V_N(\mu) = T(\mu) U_N`. If ``None`` and the test space inner product of ``fom`` is parameter independent, defaults to the supremizing operator of the full-order model (which always yields a well-posed reduced model), otherwise the user has to provide a custom operator.
             solver:
@@ -151,6 +150,7 @@ class ROM(FOM[Mu]):
         
         if continuity is None: continuity = ExactContinuity(fom)
         if trial2test is None: trial2test = fom.supremizer
+        if solver is None: solver = DirectSolver()
         
         if residual is None:
             if fom.V.is_parametric:
@@ -169,7 +169,6 @@ class ROM(FOM[Mu]):
         self._fom_continuity_estimator = continuity
         self._solver = solver
         self._trial2test = trial2test
-        if U_basis is not None: self.add_basis(U_basis)
             
         if residual == 'affine':
             self._residual_evaluator = AffineResidualNormEvaluator(self)
@@ -261,7 +260,26 @@ class ROM(FOM[Mu]):
         self.U_basis, Q = orthonormalize(self.U_basis, U)
         self._residual_evaluator.rotate_basis(Q)
         return Q
+    
         
+    def reconstruct(self, mu: Mu, u: Vector = None) -> Vector:
+        r"""
+        Reconstruct a full-order function from the reduced coefficients.
+        
+        Computes :math:`U_N u_N(\mu)` to obtain the full-order representation of the reduced solution :math:`u_N(\mu)`.
+        
+        Args:
+            mu:
+                Parameter value at which to reconstruct the solution.
+            u:
+                Optional reduced-order solution(s) :math:`(N,)` or :math:`(N,k)`. If ``None``, the reduced solution at :math:`\mu` is computed via :meth:`solve` and then reconstructed.
+        
+        Returns:
+            :math:`(n,)` or :math:`(n,k)` reduced-order approximation of the full-order solution .
+        """
+        if u is None: u = self.solve(mu)
+        return self.U_basis @ u
+    
     
     def error(self, mu: Mu, u: Vector = None, u_fom: Vector = None, abs: bool = True, rel: bool = False) -> float:
         r"""
@@ -365,26 +383,50 @@ class ROM(FOM[Mu]):
         if rlb: err['rlb'] = beta_UB/gamma_LB * r/f
         return err
 
-
-    def reconstruct(self, mu: Mu, u: Vector = None) -> Vector:
-        r"""
-        Reconstruct a full-order function from the reduced coefficients.
         
-        Computes :math:`U_N u_N(\mu)` to obtain the full-order representation of the reduced solution :math:`u_N(\mu)`.
+    def output_error(self, mu: Mu, u: Vector = None, u_fom: Vector = None) -> float:
+        r"""Compute the true error in the output of interest.
+        
+        Computes :math:`|l(\mu) u(\mu) - l_N(\mu) u_N(\mu)|` where :math:`u(\mu)` is the
+        full-order solution and :math:`u_N(\mu)` is the reduced output of interest.
         
         Args:
             mu:
-                Parameter value at which to reconstruct the solution.
+                Parameter value at which to compute the error.
             u:
-                Optional reduced-order solution(s) :math:`(N,)` or :math:`(N,k)`. If ``None``, the reduced solution at :math:`\mu` is computed via :meth:`solve` and then reconstructed.
+                Reduced-order solution vector :math:`(N,)`. If ``None``, computed via :meth:`solve`.
+            u_fom:
+                Full-order solution vector :math:`(n,)`. If ``None``, computed via :meth:`fom.solve`.
         
         Returns:
-            :math:`(n,)` or :math:`(n,k)` reduced-order approximation of the full-order solution .
+            True error in the output of interest.
         """
-        if u is None: u = self.solve(mu)
-        return self.U_basis @ u
-
+        return abs(self.fom.output(mu, u_fom) - self.output(mu, u))
+    
+    def output_error_bound(self, mu: Mu, u: Vector = None) -> float:
+        r"""Guaranteed a-posteriori upper bound of the output error.
         
+        Computes the error bound
+        
+        .. math::
+            |l(\mu) u(\mu) - l_N(\mu) u_N(\mu)| \leq \|l(\mu)\|_{U'} \frac{\|r(\mu)\|_{V'}}{\sigma_{\text{LB}}(\mu)}
+            
+        where :math:`r(\mu) = f(\mu) - B(\mu) U_N u_N(\mu)` is the residual and :math:`\sigma_{\text{LB}}(\mu)` is a lower bound for the stability constant of the full-order model.
+        
+        .. note::
+            For an better error bound, consider `PrimalDualROM` / `PrimalDualGalerkinROM`.
+        
+        Args:
+            mu:
+                Parameter value at which to compute the error bound.
+            u:
+                Reduced-order solution vector :math:`(N,)`. If ``None``, computed via :meth:`solve`.
+                
+        Returns:
+            Guaranteed upper bound of the output error.
+        """
+        return self._residual_evaluator.dual_norm_output(mu) * self.error_bound(mu, u)
+
 
 class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
     r"""
@@ -402,8 +444,7 @@ class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
                  fom: GalerkinFOM[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
-                 U_basis: AffineLinear[Mu, Vector] | Vector = None,
-                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver(),
+                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = None,
                  residual: None | str = None):
         r"""
         Args:
@@ -413,8 +454,6 @@ class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
                 Estimator for the FOM stability constant. Required for online-efficient residual-based error bounds, see `error_bound` and `error_bounds` (expept for ``alb``).
             continuity:
                 Estimator for the FOM continuity constant. Not required for `error_bound`, but for all other online-efficient error bounds, see `error_bounds` (exept for ``aub``). Provide an online-efficient implementation if you want to use any of thes error bounds in an online efficient way. If ``None``, defaults to `ExactContinuity`.
-            U_basis:
-                Initial trial space basis :math:`U_N` of shape  ``(n, N)``. If ``None``, starts with an empty basis.
             solver:
                 Solver for the reduced linear system. Defaults to :class:`DirectSolver`.
             residual: 'affine' or 'full' or None
@@ -423,10 +462,116 @@ class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
         if not isinstance(fom, GalerkinFOM):
             raise ValueError("The FOM must be a GalerkinFOM for a GalerkinROM.")
         trial2test = lambda basis: wrap_affinelinear(basis)
-        ROM.__init__(self, fom, stability, continuity, U_basis, trial2test, solver, residual)
+        ROM.__init__(self, fom, stability, continuity, trial2test, solver, residual)
 
     def add_basis(self, basis: AffineLinear[Mu, Vector] | Vector):
         self._add_basis_U(basis)
     
     def orthonormalize(self, U: InnerProduct[Mu] | Matrix | None = None):
         self._orthonormalize_U(U)
+        
+        
+class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
+    
+    dual: ROM[Mu]
+    """Dual model."""
+    
+    def __init__(self: PrimalDualROM[Mu], dual: ROM[Mu]):
+        self.dual = dual
+        self.dual._fom_stability_estimator  = self._fom_stability_estimator
+        self.dual._fom_continuity_estimator = self._fom_continuity_estimator
+    
+    def output_error_bound(self: PrimalDualROM[Mu], mu: Mu, u: Vector = None, z: Vector = None) -> float:
+        if u is None: u = self.solve(mu)
+        if z is None: z = self.dual.solve(mu)
+        sigma = self._fom_stability_estimator.lower_bound(mu)
+        r_primal = self._residual_evaluator.dual_norm(mu, u)
+        r_dual = self.dual._residual_evaluator.dual_norm(mu, z)
+        return r_primal * r_dual / sigma
+        
+        
+class PrimalDualROM(_PrimalDualROM_Mixin[Mu], ROM[Mu]):
+    r"""Primal-dual reduced-order Petrov-Galerkin model given, see `ROM` and `PrimalDualModel`.
+    """
+    
+    def __init__(self, 
+                 fom: PrimalDualModel[Mu],
+                 stability: StabilityEstimator[Mu],
+                 continuity: ContinuityEstimator[Mu] = None,
+                 primal_trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
+                 dual_trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
+                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
+                 residual: list[None | str] = [None, None]):
+        r"""
+        Args:
+            fom:
+                Full-order model to reduce.
+            stability:
+                Estimator for the primal and dual full-order stability constant (they coincide). See `ROM` and `PrimalDualModel` for details.
+            continuity:
+                Estimator for the primal and dual full-order continuity constant (they coincide). See `ROM` and `PrimalDualModel` for details.
+            primal_trial2test:
+                Trial-to-Test operator for the primal model. See `ROM` and `PrimalDualModel` for details.
+            dual_trial2test:
+                Trial-to-Test operator for the dual model. See `ROM` and `PrimalDualModel` for details.
+            solver:
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `ROM` and `PrimalDualModel`.
+            residual:
+                List of two residual evaluation methods. See `ROM` and `PrimalDualModel`.
+        """
+        
+        try:
+            solver = list(solver)
+        except TypeError:
+            solver = [solver, solver]
+            
+        if len(solver) != 2:
+            raise ValueError("Solver must be a list of two solvers for primal and dual.")
+        
+        ROM.__init__(self, fom, stability, continuity, primal_trial2test, solver[0], residual[0])
+        
+        dual = ROM(fom.dual, ExactStability(fom.dual), ExactContinuity(fom.dual), dual_trial2test, solver[1], residual[1])
+        
+        super().__init__(dual)
+        
+        
+class PrimalDualGalerkinROM(_PrimalDualROM_Mixin[Mu], GalerkinROM[Mu]):
+    r"""Primal-dual reduced-order Galerkin model given, see `GalerkinROM` and `PrimalDualModel`.
+    """
+
+    dual: GalerkinROM[Mu]
+    """Dual model."""
+    
+    def __init__(self, 
+                 fom: PrimalDualModel[Mu],
+                 stability: StabilityEstimator[Mu],
+                 continuity: ContinuityEstimator[Mu] = None,
+                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
+                 residual: list[None | str] = [None, None]):
+        r"""
+        Args:
+            fom:
+                Full-order model to reduce.
+            stability:
+                Estimator for the primal and dual full-order stability constant (they coincide). See `GalerkinROM` and `PrimalDualModel` for details.
+            continuity:
+                Estimator for the primal and dual full-order continuity constant (they coincide). See `GalerkinROM` and `PrimalDualModel` for details.
+            solver:
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `GalerkinROM` and `PrimalDualModel`.
+            residual:
+                List of two residual evaluation methods. See `GalerkinROM` and `PrimalDualModel`.
+        """
+        
+        try:
+            solver = list(solver)
+        except TypeError:
+            solver = [solver, solver]
+            
+        if len(solver) != 2:
+            raise ValueError("Solver must be a list of two solvers for primal and dual.")
+        
+        GalerkinROM.__init__(self, fom, stability, continuity, solver[0], residual[0])
+        
+        dual = GalerkinROM(fom.dual, ExactStability(fom.dual), ExactContinuity(fom.dual), solver[1], residual[1])
+        
+        super().__init__(dual)

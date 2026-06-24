@@ -9,6 +9,9 @@ __all__ = [
     'Model',
     'FOM',
     'GalerkinFOM',
+    'PrimalDualModel',
+    'PrimalDualFOM',
+    'PrimalDualGalerkinFOM',
 ]
 
 from collections.abc import Callable
@@ -237,3 +240,125 @@ class GalerkinFOM(Model[Mu], ParametricGalerkinOperator[Mu]):
         
         ParametricGalerkinOperator.__init__(self, B, U, stability, continuity, supremizer)
         Model.__init__(self, f, l, solver)
+        
+        
+        
+        
+class PrimalDualModel(Model[Mu]):
+    r"""Primal-dual model given by a parametric linear system of equations.
+    
+    The primal model is as in `Model`, while the corresponding dual model is given by :math:`B_{\text{dual}}(\mu) = B(\mu)^T`, :math:`f_{\text{dual}}(\mu) = -l(\mu)` and :math:`l_{\text{dual}}(\mu) = -f(\mu)`, :math:`U_{\text{dual}} = V` and :math:`V_{\text{dual}} = U`.
+    
+    As a important note, the stability and continuity constant of the primal and dual model coincide.
+    """
+    
+    dual: Model[Mu]
+    r"""Dual model."""
+    
+    def __init__(self, dual: Model[Mu]):
+        r"""This class is not not designt to instantiate directly.
+        
+        Call this constructor only from child classes that setup ``self`` and ``dual``. This constructor only establishes the link between the primal and dual model and copies the stability and continuity constants from the primal to the dual model as they coincide.
+        
+        Args:
+            dual:
+                Dual model.
+        """
+        self.dual = dual
+        self.dual.stability = self.stability
+        self.dual.continuity = self.continuity
+        
+class PrimalDualFOM(FOM[Mu], PrimalDualModel[Mu]):
+    r"""Primal-dual full-order Petrov-Galerkin model given by a parametric linear system of equations.
+    
+    For the primal model, see `FOM`, for the dual model see `PrimalDualModel`.
+    """
+    
+    dual: FOM[Mu]
+    r"""Dual model."""
+    
+    def __init__(self,
+                 B: AffineLinear[Mu, Matrix] | Matrix | ParametricOperator[Mu],
+                 f: AffineLinear[Mu, Vector] | Vector,
+                 U: InnerProduct[Mu] = None,
+                 V: InnerProduct[Mu] = None,
+                 l: AffineLinear[Mu, Vector] | Vector | None = None,
+                 stability:  Callable[[Mu, ParametricOperator[Mu]], float] | float | str = None,
+                 continuity: Callable[[Mu, ParametricOperator[Mu]], float] | float | str = None,
+                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
+                 primal_supremizer: Callable[[Vector, ParametricOperator[Mu]], ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]] = None,
+                 dual_supremizer: Callable[[Vector, ParametricOperator[Mu]], ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]] = None):
+        r"""
+        Args:
+            B,f,U,V,l:
+                See `FOM`.
+            stability:
+                Stability constant used for primal and dual model (as they coincide). See also `FOM` and `PrimalDualModel`.
+            continuity:
+                Continuity constant used for primal and dual model (as they coincide). See also `FOM` and `PrimalDualModel`.
+            solver:
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `FOM` and `PrimalDualModel`.
+            primal_supremizer:
+                Supremizer function for the primal model. See also `FOM`.
+            dual_supremizer:
+                Supremizer function for the dual model. See also `FOM` and `PrimalDualModel`.
+        """
+        
+        try:
+            solver = list(solver)
+        except TypeError:
+            solver = [solver, solver]
+            
+        if len(solver) != 2:
+            raise ValueError("Solver must be a list of two solvers for primal and dual.")
+            
+        super().__init__(B, f, U, V, l, stability, continuity, solver[0], primal_supremizer)
+        dual = FOM(B.T, -l, V, U, -f, solver=solver[1], supremizer=dual_supremizer)
+        PrimalDualModel.__init__(self, dual)
+        
+class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualModel[Mu]):
+    r"""Primal-dual full-order Galerkin model given by a parametric linear system of equations.
+    
+    For the primal model, see `GalerkinFOM`, for the dual model see `PrimalDualModel`.
+    """
+    
+    dual: GalerkinFOM[Mu]
+    r"""Dual model."""
+    
+    def __init__(self,
+                 B: AffineLinear[Mu, Matrix] | Matrix | ParametricGalerkinOperator[Mu],
+                 f: AffineLinear[Mu, Vector] | Vector,
+                 U: InnerProduct[Mu] = None,
+                 l: AffineLinear[Mu, Vector] | Vector | None = None,
+                 stability:  Callable[[Mu, ParametricGalerkinOperator[Mu]], float] | float | str = None,
+                 continuity: Callable[[Mu, ParametricGalerkinOperator[Mu]], float] | float | str = None,
+                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
+                 primal_supremizer: Callable[[Vector, ParametricGalerkinOperator[Mu]], ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]] = None,
+                 dual_supremizer: Callable[[Vector, ParametricGalerkinOperator[Mu]], ParametricLinear[Mu, Vector] | AffineLinear[Mu, Vector]] = None):
+        r"""
+        Args:
+            B,f,U,l:
+                See `GalerkinFOM`.
+            stability:
+                Stability constant used for primal and dual model (as they coincide). See also `GalerkinFOM` and `PrimalDualModel`.
+            continuity:
+                Continuity constant used for primal and dual model (as they coincide). See also `GalerkinFOM` and `PrimalDualModel`.
+            solver:
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `GalerkinFOM` and `PrimalDualModel`.
+            primal_supremizer:
+                Supremizer function for the primal model. See also `GalerkinFOM`.
+            dual_supremizer:
+                Supremizer function for the dual model. See also `GalerkinFOM` and `PrimalDualModel`.
+        """
+        
+        try:
+            solver = list(solver)
+        except TypeError:
+            solver = [solver, solver]
+            
+        if len(solver) != 2:
+            raise ValueError("Solver must be a list of two solvers for primal and dual.")
+            
+        super().__init__(B, f, U, l, stability, continuity, solver[0], primal_supremizer)
+        dual = GalerkinFOM(B.T, -l, U, -f, solver=solver[1], supremizer=dual_supremizer)
+        PrimalDualModel.__init__(self, dual)

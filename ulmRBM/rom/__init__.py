@@ -8,6 +8,8 @@ Reduced-Order Models
     
     ROM
     GalerkinROM
+    PrimalDualROM
+    PrimalDualGalerkinROM
     
 Time-Stepping Reduced-Order Models
 ----------------------------------
