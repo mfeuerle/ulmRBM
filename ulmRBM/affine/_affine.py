@@ -20,6 +20,7 @@ from numbers import Number
 from collections.abc import Iterable, MutableSequence, Callable, Sequence
 from enum import IntEnum
 import numpy as np
+import scipy as sp
 
 from ulmRBM.core import Mu, Data, Matrix, Vector, ParametricObject, ParametricLinear, TrivialParametric, wrap_scalar, unwrap
 
@@ -755,7 +756,6 @@ def affine_kron(A: Matrix | AffineLinear[Mu, Matrix], B: Matrix | AffineLinear[M
         import kron
         _kron = kron.kron
     elif format == 'sparse':
-        import scipy as sp
         _kron = sp.sparse.kron
     else:
         _kron = np.kron
