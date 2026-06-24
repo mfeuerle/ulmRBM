@@ -15,6 +15,7 @@ Heat Equation Problems
     :toctree: generated/
     
     heat_equation
+    heat_equation_timestepping
     simple_heat
     simple_heat_timestepping
     

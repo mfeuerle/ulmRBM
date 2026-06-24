@@ -52,7 +52,7 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
     .. math::
         \begin{aligned}
         u(t_0; \mu) &= u_0(\mu),\\
-        M(\mu) u'(t; \mu) - A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K],
+        M(\mu) u'(t; \mu) + A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K],
         \end{aligned}
     
     which can be solved by a time-stepping scheme.
@@ -162,13 +162,13 @@ def explicit_euler(A: Matrix | AffineLinear[Mu, Matrix],
     .. math::
         \begin{aligned}
         u(t_0; \mu) &= u_0(\mu),\\
-        M(\mu) u'(t; \mu) - A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
+        M(\mu) u'(t; \mu) + A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
         \end{aligned}
         
     Using :math:`t_k = t_0 + k \cdot \Delta t` for a constant step-size :math:`k=0,\ldots,K` with :math:`\Delta t = (t_K - t_0) / K` and using the notation of `StationaryTimeSteppingGalerkinFOM`, the explicit Euler scheme is given by
     
     .. math::
-        \mathcal{L}^I(\mu) = M(\mu), \quad \mathcal{L}^E(\mu) = M(\mu) + \Delta t A(\mu), \quad b_k(\mu) = \Delta t f(t_k; \mu).
+        \mathcal{L}^I(\mu) = M(\mu), \quad \mathcal{L}^E(\mu) = M(\mu) - \Delta t A(\mu), \quad b_k(\mu) = \Delta t f(t_k; \mu).
     
     Args:
         A:
@@ -198,7 +198,7 @@ def explicit_euler(A: Matrix | AffineLinear[Mu, Matrix],
     dt = (I[1] - I[0]) / K
     
     LI = wrap_affinelinear(M)
-    LE = wrap_affinelinear(M) + dt * wrap_affinelinear(A)
+    LE = wrap_affinelinear(M) - dt * wrap_affinelinear(A)
     
     def assemble_b(f):
         b = np.empty((A.shape[1], K))
@@ -221,13 +221,13 @@ def implicit_euler(A: Matrix | AffineLinear[Mu, Matrix],
     .. math::
         \begin{aligned}
         u(t_0; \mu) &= u_0(\mu),\\
-        M(\mu) u'(t; \mu) - A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
+        M(\mu) u'(t; \mu) + A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
         \end{aligned}
         
     Using :math:`t_k = t_0 + k \cdot \Delta t` for a constant step-size :math:`k=0,\ldots,K` with :math:`\Delta t = (t_K - t_0) / K` and using the notation of `StationaryTimeSteppingGalerkinFOM`, the implicit Euler scheme is given by
     
     .. math::
-        \mathcal{L}^I(\mu) = M(\mu) - \Delta t A(\mu), \quad \mathcal{L}^E(\mu) = M(\mu), \quad b_k(\mu) = \Delta t f(t_{k+1}; \mu).
+        \mathcal{L}^I(\mu) = M(\mu) + \Delta t A(\mu), \quad \mathcal{L}^E(\mu) = M(\mu), \quad b_k(\mu) = \Delta t f(t_{k+1}; \mu).
     
     Args:
         A:
@@ -256,7 +256,7 @@ def implicit_euler(A: Matrix | AffineLinear[Mu, Matrix],
     t = np.linspace(*I, K+1)
     dt = (I[1] - I[0]) / K
     
-    LI = wrap_affinelinear(M) - dt * wrap_affinelinear(A)
+    LI = wrap_affinelinear(M) + dt * wrap_affinelinear(A)
     LE = wrap_affinelinear(M)
     
     def assemble_b(f):
@@ -281,13 +281,13 @@ def crank_nicolson(A: Matrix | AffineLinear[Mu, Matrix],
     .. math::
         \begin{aligned}
         u(t_0; \mu) &= u_0(\mu),\\
-        M(\mu) u'(t; \mu) - A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
+        M(\mu) u'(t; \mu) + A(\mu) u(t; \mu) &= f(t; \mu)\quad\text{in $W'$} &&\text{for } t \in (t_0, t_K].
         \end{aligned}
         
     Using :math:`t_k = t_0 + k \cdot \Delta t` for a constant step-size :math:`k=0,\ldots,K` with :math:`\Delta t = (t_K - t_0) / K` and using the notation of `StationaryTimeSteppingGalerkinFOM`, the Crank-Nicolson scheme is given by
     
     .. math::
-        \mathcal{L}^I(\mu) = M(\mu) - \frac{\Delta t}{2} A(\mu), \quad \mathcal{L}^E(\mu) = M(\mu) + \frac{\Delta t}{2} A(\mu), \quad b_k(\mu) = \frac{\Delta t}{2} ( f(t_k; \mu) + f(t_{k+1}; \mu) ).
+        \mathcal{L}^I(\mu) = M(\mu) + \frac{\Delta t}{2} A(\mu), \quad \mathcal{L}^E(\mu) = M(\mu) - \frac{\Delta t}{2} A(\mu), \quad b_k(\mu) = \frac{\Delta t}{2} ( f(t_k; \mu) + f(t_{k+1}; \mu) ).
     
     Args:
         A:
@@ -316,8 +316,8 @@ def crank_nicolson(A: Matrix | AffineLinear[Mu, Matrix],
     t = np.linspace(*I, K+1)
     dt = (I[1] - I[0]) / K
     
-    LI = wrap_affinelinear(M) - dt/2 * wrap_affinelinear(A)
-    LE = wrap_affinelinear(M) + dt/2 * wrap_affinelinear(A)
+    LI = wrap_affinelinear(M) + dt/2 * wrap_affinelinear(A)
+    LE = wrap_affinelinear(M) - dt/2 * wrap_affinelinear(A)
     
     def assemble_b(f):
         b = np.empty((A.shape[1], K))

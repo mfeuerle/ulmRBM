@@ -23,16 +23,13 @@ mu_range = (0.01, 1.0)
 # FULL-ORDER MODEL
 #########################
 
-f = AffineFunction([1.0], [lambda t: lambda x: np.ones(x.shape[1])])
+f = AffineFunction([1.0], [lambda t,x: np.ones(x.shape[1])])
 u0 = AffineObject([1.0], [lambda x:  np.sin(np.pi*x[0])])
 
-A, M, f, u0, U = simple_heat_timestepping(Omega, nx, f, u0)
-U_H10 = norms.h10(U, DirectSolver(factorize=True))
-
-LI, LE, b, t = crank_nicolson(A, M, f, I, K)
-
-LI = ParametricGalerkinOperator(LI, U_H10, stability='direct', continuity='direct')
-LE = ParametricGalerkinOperator(LE, U_H10, stability='direct', continuity='direct')
+LI, LE, b, u0, t, W_fnx = simple_heat_timestepping(K, nx, f, u0)
+W = norms.h10(W_fnx, DirectSolver(factorize=True))
+LI = ParametricGalerkinOperator(LI, W, stability='direct', continuity='direct')
+LE = ParametricGalerkinOperator(LE, W, stability='direct', continuity='direct')
 
 fom = StationaryTimeSteppingGalerkinFOM(LI, LE, b, u0, t)
 
@@ -44,9 +41,9 @@ print(f"Number of affine terms in b: {len(b)}")
 
 def solve_fom(mu):
     u = fom.solve(mu)
-    u_full = np.zeros((U.dim, len(u.t)))
+    u_full = np.zeros((W_fnx.dim, len(u.t)))
     for k in range(len(u.t)):
-        u_full[:,k] = U.set_dirichletbcs(mu, u.u[:,k])
+        u_full[:,k] = W_fnx.set_dirichletbcs(mu, u.u[:,k])
     return TimeSteppingSolution(u.t, u_full)
 
 ########################################
@@ -56,7 +53,7 @@ def solve_fom(mu):
 if np.isscalar(nx) or len(nx) == 1:
     mus = [mu_range[0], (mu_range[1]-mu_range[0])/2 + mu_range[0], mu_range[1]]
 
-    T, X = np.meshgrid(t,U.space.mesh.geometry.x[:,0])
+    T, X = np.meshgrid(t,W_fnx.space.mesh.geometry.x[:,0])
 
     for mu in mus:
         u_fom = solve_fom(mu)

@@ -12,17 +12,13 @@ from ulmRBM.rom import *
 K = 50
 nx = [50]
 
-# f = AffineFunction([1.0], [lambda t: lambda x: np.ones(x.shape[1])])
+# f = AffineFunction([1.0], [lambda t,x: np.ones(x.shape[1])])
 # u0 = AffineFunction([1.0], [lambda x:  np.sin(np.pi*x[0])])
 
-A, M, f, u0, W_fnx = simple_heat_timestepping(nx)
+LI, LE, b, u0, t, W_fnx = simple_heat_timestepping(K, nx)
 W = norms.h10(W_fnx, DirectSolver(factorize=True))
-
-LI, LE, b, t = crank_nicolson(A, M, f, [0,1], K)
-
 LI = ParametricGalerkinOperator(LI, W, stability='direct', continuity='direct')
 LE = ParametricGalerkinOperator(LE, W, stability='direct', continuity='direct')
-
 fom = StationaryTimeSteppingGalerkinFOM(LI, LE, b, u0, t)
 
 def solve_fom(mu):
