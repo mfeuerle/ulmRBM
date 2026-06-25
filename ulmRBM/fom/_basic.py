@@ -79,7 +79,7 @@ class Model(ParametricOperator[Mu]):
         """
         if self.B.shape[0] != f.shape[0]:
             raise ValueError("B and f must have compatible dimensions.")
-        if l is not None and l.shape[1] != self.U.shape[0]:
+        if l is not None and l.shape[0] != self.U.shape[0]:
             raise ValueError("l and U must have compatible dimensions.")
         
         if solver is None: solver = IterativeSolver()
