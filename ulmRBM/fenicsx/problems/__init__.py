@@ -25,6 +25,7 @@ Wave Equation Problems
     :toctree: generated/
     
     simple_wave
+    simple_wave_with_output
 """
 
 from ._elliptic import *
