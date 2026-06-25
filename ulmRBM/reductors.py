@@ -39,6 +39,7 @@ def greedy_rbm(
     update_stability: bool = False,
     update_continuity: bool = False,
     display: bool = True,
+    use_output: bool = False,
     callback: Callable[[ROM[Mu], Mu, Vector], None] | None = None
 ) -> tuple[int, np.ndarray, np.ndarray]:
     """
@@ -63,6 +64,8 @@ def greedy_rbm(
             Whether to update the continuity estimator of the reduced model in each iteration using `ContinuityEstimator.update`. This is useful if the continuity estimator can not be setup seperately, e.g. using `greedy_constant_estimator`, or if the continuity estimator should be enhanced further.
         display:
             Whether to print information during the greedy procedure.
+        use_output:
+            Use output error (estimate) instead od of state error (estimate).
         callback: 
             Optional callback function invoked after each enrichment with signature ``(rom, mu, u_mu)``, where ``rom`` is the reduced model after enrichment, ``mu`` the parameter value of the last enrichment, and ``u_mu`` the corresponding FOM solution.
 
@@ -83,6 +86,9 @@ def greedy_rbm(
     
     fom = rom.fom
     mu_train = np.array(mu_train)
+
+    if use_output and fom.l is None:
+        raise ValueError('FOM needs to have an output to compute the output error')
     
     if isinstance(ortho, bool):
         if ortho: U_ortho = None
@@ -162,9 +168,15 @@ def greedy_rbm(
         
         if display: print(f"{time.time() - start_time:6.1f}s:\t computing errors for {len(mu_train)} parameters...")
         if strong:
-            err = np.array([rom.error(mu, u_fom=u_mu) for mu, u_mu in zip(mu_train, u_fom)])
+            if use_output:
+                err = np.array([rom.output_error(mu, u_fom=u_mu) for mu, u_mu in zip(mu_train, u_fom)])
+            else:
+                err = np.array([rom.error(mu, u_fom=u_mu) for mu, u_mu in zip(mu_train, u_fom)])
         else:
-            err = np.array([rom.error_bound(mu) for mu in mu_train])
+            if use_output:
+                err = np.array([rom.output_error_bound(mu) for mu in mu_train])
+            else:
+                err = np.array([rom.error_bound(mu) for mu in mu_train])
             
         if np.isinf(err.max()):
             inf_mask = np.argwhere(np.isinf(err)).flatten()
@@ -179,7 +191,11 @@ def greedy_rbm(
             flag = 0
             break
         
-        if display: print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.shape[1]:3d})" if not start else ""}: max. error={err:.2e} at mu_train[{original_idx[idx]}]")
+        if display:
+            if use_output:
+                print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.shape[1]:3d})" if not start else ""}: max. output error={err:.2e} at mu_train[{original_idx[idx]}]")
+            else:
+                print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.shape[1]:3d})" if not start else ""}: max. error={err:.2e} at mu_train[{original_idx[idx]}]")
         _perform_iteration(idx)
     
     ########################
