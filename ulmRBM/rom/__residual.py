@@ -125,7 +125,7 @@ class ResidualNormEvaluator(Generic[Mu]):
         where :math:`l(\mu)` is the output functional of the full-order model and :math:`U'` the dual space of the trial space.
         """
         if self._output is True:
-            self._dual_norm_output(mu)
+            return self._dual_norm_output(mu)
         else:
             raise self._output
         
