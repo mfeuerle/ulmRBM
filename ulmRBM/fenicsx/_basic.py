@@ -320,10 +320,10 @@ def assemble_system(B: ufl.Form | AffineObject[Mu, ufl.Form],
                     f: ufl.Form | AffineObject[Mu, ufl.Form],
                     U: FEniCSxSpaceWithDirichletBCs, 
                     V: FEniCSxSpaceWithDirichletBCs,
-                    l: np.ndarray | AffineObject[Mu, np.ndarray] | None = None) -> tuple[AffineLinear[Mu,csr_array], AffineLinear[Mu,np.ndarray]]:
+                    l: ufl.Form | AffineObject[Mu, ufl.Form] | None = None) -> tuple[AffineLinear[Mu,csr_array], AffineLinear[Mu,np.ndarray]]:
     r"""Assemble a (parametric) linear system and applying Dirichlet boundary conditions.
     
     Just a wrapper around `utils.assemble_matrix`, `utils.assemble_vector` and `apply_dirichletbc` for convenience.
     """
     
-    return apply_dirichletbc(utils.assemble_matrix(B), utils.assemble_vector(f), U, V, l)
+    return apply_dirichletbc(utils.assemble_matrix(B), utils.assemble_vector(f), U, V, utils.assemble_vector(l))
