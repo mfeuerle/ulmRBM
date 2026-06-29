@@ -8,6 +8,7 @@ Elliptic Problems
     weak_problem
     simple_elliptic
     thermal_block
+    thermal_block_with_output
     
 Heat Equation Problems
 ----------------------
