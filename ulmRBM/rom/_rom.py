@@ -475,11 +475,45 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
     
     dual: ROM[Mu]
     """Dual model."""
+
+    _B_mixed: AffineLinear[Mu, Matrix] | None = None
+    _B_mixed_private: AffineLinear[Mu, Matrix] | None = None
+
+    @property
+    def _B_mixed(self) -> AffineLinear[Mu, Matrix]:
+        self.assemble()
+        return self._B_mixed_private
+    
+    @_B_mixed.setter
+    def _B_mixed(self, value: AffineLinear[Mu, Matrix]):
+        self._B_mixed_private = value
     
     def __init__(self: PrimalDualROM[Mu], dual: ROM[Mu]):
         self.dual = dual
         self.dual._fom_stability_estimator  = self._fom_stability_estimator
         self.dual._fom_continuity_estimator = self._fom_continuity_estimator
+        old_assemble = self.dual.assemble
+        def dual_assemble():
+            if self.dual._need_assemble:
+                self._need_assemble = True
+                old_assemble()
+        self.dual.assemble = dual_assemble
+
+    def assemble(self: PrimalDualROM[Mu]):
+        ROM.assemble(self)
+        if self._need_assemble or self.dual._need_assemble:
+            if self.dual.U_basis.T is not None and self.fom.B is not None and self.U_basis is not None:
+                self._B_mixed = self.dual.U_basis.T @ self.fom.B @ self.U_basis
+            else:
+                self._B_mixed = None
+
+    def output(self: PrimalDualROM[Mu], mu: Mu, u: Vector | None = None, z: Vector | None = None) -> Vector:
+        if self.l is None:
+            raise ValueError("No output functional defined for this model.")
+        if u is None: u = self.solve(mu)
+        if z is None: z = self.dual.solve(mu)
+        return (self.l(mu) @ u # Classical primal output
+                + self.dual.output(mu, z) + z.T @ self._B_mixed(mu) @ u) # Primal dual correction (primal residual evaluated at dual solution)
     
     def output_error_bound(self: PrimalDualROM[Mu], mu: Mu, u: Vector = None, z: Vector = None) -> float:
         if u is None: u = self.solve(mu)
