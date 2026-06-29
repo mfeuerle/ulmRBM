@@ -331,7 +331,7 @@ def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False)
 
 def thermal_block_with_output(nh: list[int,int],
                               nblocks: list[int,int],
-                              output_mode: int,
+                              output_mode: int = 0,
                               plot: bool = False) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Create the parametric thermal block problem.
 
