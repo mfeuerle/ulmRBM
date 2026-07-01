@@ -477,7 +477,7 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
     """Dual model."""
     
     def __init__(self: PrimalDualROM[Mu], dual: ROM[Mu]):
-        self.dual = dual
+        super().__init__(dual)
         self.dual._fom_stability_estimator  = self._fom_stability_estimator
         self.dual._fom_continuity_estimator = self._fom_continuity_estimator
     

@@ -325,5 +325,5 @@ def assemble_system(B: ufl.Form | AffineObject[Mu, ufl.Form],
     
     Just a wrapper around `utils.assemble_matrix`, `utils.assemble_vector` and `apply_dirichletbc` for convenience.
     """
-    
-    return apply_dirichletbc(utils.assemble_matrix(B), utils.assemble_vector(f), U, V, utils.assemble_vector(l))
+    if l is not None: l = utils.assemble_vector(l)
+    return apply_dirichletbc(utils.assemble_matrix(B), utils.assemble_vector(f), U, V, l)

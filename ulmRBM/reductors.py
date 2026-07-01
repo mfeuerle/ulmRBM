@@ -192,10 +192,8 @@ def greedy_rbm(
             break
         
         if display:
-            if use_output:
-                print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.shape[1]:3d})" if not start else ""}: max. output error={err:.2e} at mu_train[{original_idx[idx]}]")
-            else:
-                print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.shape[1]:3d})" if not start else ""}: max. error={err:.2e} at mu_train[{original_idx[idx]}]")
+            print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.shape[1]:3d})" if not start else ""}: max. {"output" if use_output else ""} error={err:.2e} at mu_train[{original_idx[idx]}]")
+            
         _perform_iteration(idx)
     
     ########################
