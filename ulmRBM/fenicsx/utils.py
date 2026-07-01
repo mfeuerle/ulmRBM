@@ -14,6 +14,9 @@ Functions
     plot_pyvista
     isclose
     get_interpolation_points
+    point_cells
+    point_evaluation
+    point_functional
 """
 
 
@@ -22,7 +25,7 @@ import scipy as sp
 from numbers import Number
 from scipy.sparse import csr_array
 
-from dolfinx import mesh, fem, plot
+from dolfinx import mesh, fem, plot, geometry
 import ufl
 import basix.ufl
 
@@ -43,6 +46,9 @@ __all__ = [
     'get_interpolation_points',
     'assemble_matrix',
     'assemble_vector',
+    'point_cells',
+    'point_evaluation',
+    'point_functional',
 ]
 
 def create_measure(integral_type: str, domain: mesh.Mesh, tdim: int, entities: list, tags = None) -> ufl.Measure:
@@ -295,3 +301,93 @@ def assemble_vector(l: ufl.Form | AffineObject[Mu, ufl.Form]) -> np.ndarray | Af
         return AffineLinear(l.compress().apply2data(assemble))
     else:
         return assemble(l)
+    
+def _make_points_3d(msh: ufl.Mesh, points: np.ndarray):
+    if points.shape[1] != 3:
+        if points.shape[1] != msh.geometry.dim:
+            raise ValueError(f"Points have wrong dimension {points.shape}, should be either shape=(npoints,3) or shape=(npoints,{msh.geometry.dim}).")
+        points = np.hstack( (points, np.zeros((points.shape[0], 3 - points.shape[1]))) )
+    return points
+
+def point_cells(msh: ufl.Mesh, points: np.ndarray) -> list[np.int32]:
+    r"""Return cells that contain the coordinates in points.
+
+    Args:
+        msh:
+            Mesh containing all cells.
+        points:
+            (3D) coordinates of points of interest.
+   
+    Returns:
+        List of cells that contain the coordinates in points.
+    """
+
+    points = _make_points_3d(msh, points)
+    
+    cells = []
+    # 1. Build a bounding-box tree and find the cell containing the point
+    bb_tree = geometry.bb_tree(msh, msh.topology.dim)
+    # Find cells whose bounding-box collide with the the points
+    cell_candidates = geometry.compute_collisions_points(bb_tree, points)
+    # Choose one of the cells that contains the point
+    colliding_cells = geometry.compute_colliding_cells(msh, cell_candidates, points)
+    for i in range(len(points)):
+        if len(colliding_cells.links(i)) > 0:
+            cells.append(colliding_cells.links(i)[0])
+        else:
+            raise ValueError("Point is outside the mesh.")
+    
+    return cells
+
+def point_evaluation(func: fem.Function, points: np.ndarray[np.float64], cells: list[np.int32] = None) -> np.ndarray:
+    r"""Point evaluate a function.
+
+    Args:
+        func:
+            Function to be evaluated.
+        points:
+            (3D) coordinates of points of interest.
+        cells:
+            The cells contaning the coordinates in points.
+   
+    Returns:
+        Array of function values at the coordinates in points.
+    """
+
+    points = _make_points_3d(func.function_space.mesh, points)
+    if cells is None:
+        cells = point_cells(func.function_space.mesh, points)
+    values = func.eval(points, cells)
+    return values.reshape(-1)
+
+def point_functional(space: fem.FunctionSpace, points: np.ndarray[np.float64], cells: list[np.int32] = None) -> np.ndarray:
+    r"""Compute linear functional for the point evaluation of a function.
+    
+    Args:
+        func:
+            Function to be evaluated.
+        points:
+            (3D) coordinates of points of interest.
+        cells:
+            The cells contaning the coordinates in points.
+
+    Returns:
+        Linear operator as 2D array.
+    """
+
+    points = _make_points_3d(space.mesh, points)
+    if cells is None:
+        cells = point_cells(space.mesh, points)
+        
+    m = points.shape[0]
+    n = space.dofmap.index_map.size_global
+    
+    L = np.empty((m, n))
+    
+    e = fem.Function(space)
+    e.x.array[:] = 0.0
+    for i in range(n):
+        e.x.array[i] = 1.0
+        L[:,i] = point_evaluation(e, points, cells)
+        e.x.array[i] = 0.0
+    return L
