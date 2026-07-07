@@ -489,7 +489,7 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
         self._B_mixed_private = value
     
     def __init__(self: PrimalDualROM[Mu], dual: ROM[Mu]):
-        super().__init__(dual)
+        self.dual = dual
         self.dual._fom_stability_estimator  = self._fom_stability_estimator
         self.dual._fom_continuity_estimator = self._fom_continuity_estimator
         old_assemble = self.dual.assemble
@@ -502,7 +502,7 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
     def assemble(self: PrimalDualROM[Mu]):
         ROM.assemble(self)
         if self._need_assemble or self.dual._need_assemble:
-            if self.dual.U_basis.T is not None and self.fom.B is not None and self.U_basis is not None:
+            if self.dual.U_basis.T is not None and self.U_basis is not None:
                 self._B_mixed = self.dual.U_basis.T @ self.fom.B @ self.U_basis
             else:
                 self._B_mixed = None
