@@ -8,12 +8,14 @@ Norms
     l2
     h10
     h1
+    space_time
 """
 
 __all__ = [
     'l2',
     'h10',
     'h1',
+    'space_time'
     ]
 
 from collections.abc import Callable
@@ -108,7 +110,25 @@ def h1(U: FEniCSxSpaceWithDirichletBCs,
     if bcs: product = product[U.dofs,:][:,U.dofs]
     return MatrixInnerProduct(product, solver)
 
-def space_time(U, norm: list[dict[SpaceTimeKey, str]], solver=None, bcs=True):
+
+def space_time(U: SpaceTimeFEniCSxSpaceWithDirichletBCs, norm: list[dict[SpaceTimeKey, str]], solver=None, bcs=True):
+    r"""Space-time inner product matrix.
+    
+    Let :math:`V_i^{SPACE}` and :math:`V_i^{TIME}`, :math:`i=1,\ldots,N`, be a collection of space and time inner product matrices, respectively. Then the space-time inner product matrix is defined
+    
+    .. math::
+        V_{SPACE \otimes TIME} = \sum_{i=1}^N V_i^{SPACE} \otimes V_i^{TIME}.
+        
+    Args:
+        U :
+            Space-time function space
+        norm :
+            List of dictionaries specifying the space and time inner product matrices, with ``norm[i][KEY]`` being one of the norms provided in this module, such as``'l2'``, ``'h10'``, or ``'h1'``, and ``KEY`` being a `SpaceTimeKey`. In addition, the suffix ``'dual'`` can be used to indicate that the dual inner product matrix should be used, e.g., ``'h10 dual'``.
+        solver :
+            Optional solver used by ``MatrixInnerProduct`` for dual inner product of :math:`V_{SPACE \otimes TIME}`.
+        bcs :
+            If ``True``, the inner product is restricted to the free dofs of ``U``.
+    """
     
     M = []
     

@@ -369,6 +369,8 @@ def apply_dirichletbc_space_time(B: list[dict[SpaceTimeKey, AffineLinear[Mu, Mat
     f:
         Right-hand side vector with test Dirichlet boundary dofs removed and trial Dirichlet boundary conditions applied.
     """
+    B = [{KEY: wrap_affinelinear(Bi[KEY]) for KEY in SpaceTimeKey} for Bi in B]
+    f = wrap_affinelinear(f)
     
     B_F =  [{KEY: Bi[KEY].apply2data(lambda Biq: Biq[V.dofs[KEY]])    for KEY in SpaceTimeKey} for Bi in B]
     B_FF = [{KEY: Bi[KEY].apply2data(lambda Biq: Biq[:, U.dofs[KEY]]) for KEY in SpaceTimeKey} for Bi in B_F]

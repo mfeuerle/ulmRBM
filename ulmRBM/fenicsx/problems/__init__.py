@@ -6,6 +6,7 @@ Elliptic Problems
     :toctree: generated/
     
     weak_problem
+    thermal_block
     simple_elliptic
     thermal_block
     
@@ -24,8 +25,19 @@ Wave Equation Problems
 .. autosummary::
     :toctree: generated/
     
-    simple_wave
-    simple_wave_with_output
+    weak_problem
+    wave_equation_structured
+    wave_equation_hilbert
+    simple_wave    
+    simple_wave_structured
+    simple_wave_hilbert
+    
+Submodules
+-----------------
+.. autosummary::
+    :toctree: generated/
+    
+    hilbert_transform
 """
 
 from ._elliptic import *
@@ -33,6 +45,7 @@ from ._heat import *
 from ._wave import *
 
 _submodules = [
+    'hilbert_transform',
 ]
 
 # for backwards compatibility, we import
