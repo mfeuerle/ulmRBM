@@ -13,6 +13,9 @@ dependencies:
   - pip
   - pip:
       - -e .
+  # for space-time kronecker products (optional)
+  - pip:
+      - git+https://github.com/mfeuerle/kron
   # for testing
   - pytest
   - pytest-cov
