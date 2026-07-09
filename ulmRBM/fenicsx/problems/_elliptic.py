@@ -283,18 +283,18 @@ def thermal_block(nh: list[int,int],
     If an output is desired `l` and ``s0`` are returned as well such that
      
     .. math::
-        s_\mu(u_\mu(x)) = l(u_\mu(x);\mu) + s0
+        s_\mu(u_\mu(x)) = l(u_\mu(x);\mu) + s0_\mu
 
-    Here ``s0`` is the parameter independent part of the output and `l` is applied to the 
+    Here ``s0`` is the output contribution of the Dirichlet boundaries and `l` is applied to the 
     real dofs of the solution :math:`u_\mu(x)`.
        
-    For ``outputmode = 1`` the output is defined as the flux over domain boundary, i.e.
+    For ``outputmode = 1`` the output is defined as the flux over the domain boundary, i.e.
 
     .. math::
         s_\mu(u_\mu(x)) = \int_{\partial\Omega} -A_\mu(x) \nabla_x u_\mu(x) n \, \text{d} x
 
     For ``outputmode = 2`` the output is defined as the difference in the solution between 
-    the ccordinates [0.25, 0.25] and [0.75, 0.75], i.e.
+    the coordinates [0.25, 0.25] and [0.75, 0.75], i.e.
 
     .. math::
         s_\mu(u_\mu(x)) = u_\mu([0.25, 0.25]) - u_\mu([0.75, 0.75])
@@ -306,13 +306,17 @@ def thermal_block(nh: list[int,int],
     nblocks : 
         Number of thermal blocks in each spatial direction.
     output_mode:
-        Choose output. 0 for no output. 1 for flux over boundary. 2 for temperature difference beteen coordinates (0.25, 0.25) and (0.75, 0.75)
+        Choose output. 0 for no output. 1 for flux over boundary. 2 for temperature difference beteen coordinates [0.25, 0.25] and [0.75, 0.75]
     plot :
         If ``True``, visualize all block indicator functions :math:`\chi_q`.
 
     Returns
     -------
     See `weak_problem` for details on the return values.
+    l :
+        1D vector for computing the output :math:`s = lu`, i.e. ``l.shape = (U.dim,)``.
+    s0 :
+        Contribution of the Dirichlet boundaries to the output (real number).
     """
     msh = mesh.create_unit_square(MPI.COMM_WORLD, *nh)
     gdim = msh.geometry.dim
