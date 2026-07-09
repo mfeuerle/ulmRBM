@@ -33,10 +33,10 @@ u0 = 0.0   # initial condition u(0)
 u1 = 0.0   # initial velocity u_t(0)
 g  = 0.0   # boundary condition on IxGamma
 
-# f = lambda t,x: np.sin(np.pi*t)*np.sin(np.pi*x[0])
+# f  = lambda t,x: np.sin(np.pi*t)*np.sin(np.pi*x[0])
 # u0 = lambda x: np.sin(np.pi * x[0])
 # u1 = lambda x: np.ones(x[0].shape)
-# g = lambda t,x: t*x[0]
+# g  = lambda t,x: t*x[0]
 
 
 ########################################
@@ -69,6 +69,9 @@ def unstructured(K, nx, f, g, u0, u1):
     
     return fom, set_dbcs, U_fnx, V_fnx
 
+########################################
+# Structured Wave discretization
+########################################
 
 def structured(K, nx, f, g, u0, u1):
     
@@ -87,6 +90,9 @@ def structured(K, nx, f, g, u0, u1):
     
     return fom, set_dbcs, U_fnx, V_fnx
 
+########################################
+# Hilbert transform structured Wave discretization
+########################################
 
 def hilbert(K, nx, f, g, u0, u1):
     
