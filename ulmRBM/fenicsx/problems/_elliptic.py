@@ -7,14 +7,13 @@ from mpi4py import MPI
 from dolfinx import mesh, fem
 import ufl
 
-from ulmRBM.core import Mu
-from ulmRBM.affine import AffineObject, AffineFunction
+from ulmRBM.core import Mu, Matrix, Number, Vector
+from ulmRBM.affine import AffineObject, AffineFunction, AffineLinear
 from ulmRBM.fenicsx import utils, AffineDirichletBC, FEniCSxSpaceWithDirichletBCs, assemble_system, apply_dirichletbc
 
 __all__ = [
     'weak_problem',
     'thermal_block',
-    'thermal_block_with_output',
     'simple_elliptic',
 ]
 
@@ -209,7 +208,7 @@ def weak_problem(msh: mesh.Mesh,
 
 def simple_elliptic(n: int | list[int] = 10, 
                     f: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 1, 
-                    g: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 0) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+                    g: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
     r"""Parametric elliptic problem on the unit square.
 
     The model uses `weak_problem` with
@@ -256,7 +255,10 @@ def simple_elliptic(n: int | list[int] = 10,
     return B, f, U, V
 
 
-def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
+def thermal_block(nh: list[int,int],
+                  nblocks: list[int,int],
+                  output_mode: int = 0,
+                  plot: bool = False) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs, AffineLinear[Mu,Vector], AffineLinear[Mu,Number],]:
     r"""Create the parametric thermal block problem.
 
     The domain is the unit square :math:`\Omega = (0,1)^2`, partitioned into
@@ -277,82 +279,17 @@ def thermal_block(nh: list[int,int], nblocks: list[int,int], plot: bool = False)
     All exterior facets are treated as Dirichlet boundaries for 
     trial and test spaces, i.e. :math:`\Gamma_D = \partial\Omega`
     and :math:`\Gamma_N = \emptyset` with dirichlet data :math:`g=0`.
-
-    Parameters
-    ----------
-    nh : 
-        Number of mesh cells in each spatial direction.
-    nblocks : 
-        Number of thermal blocks in each spatial direction.
-    plot :
-        If ``True``, visualize all block indicator functions :math:`\chi_q`.
-
-    Returns
-    -------
-    See `weak_problem` for details on the return values.
-    """
-    msh = mesh.create_unit_square(MPI.COMM_WORLD, *nh)
-    gdim = msh.geometry.dim
-    
-    dbdry = [lambda x: np.ones(x.shape[1], dtype=bool)]
-    
-    f = AffineObject([1.0], [1.0])
-    g = [AffineObject([0.0], [0.0])]
-    h = []
-    
-    blocks = [np.linspace(0, 1, nblocks[i]+1) for i in range(2)]
-    
-    def chi(x, block_id):
-        value = np.ones(x.shape[1], dtype=bool)
-        for i,id in enumerate(block_id):
-            if id != 0:
-                value &= blocks[i][id] <= x[i]
-            if id != nblocks[i] - 1:
-                value &= x[i] < blocks[i][id+1]
-        return value
-
-    A = AffineObject()
-    for idx in product(*[range(n) for n in nblocks]):
-        A += [(lambda mu, idx=idx: mu[idx], lambda x, idx=idx: -np.eye(gdim).reshape(-1,1) * chi(x, idx) )]
-    b = AffineObject([0.0], [np.zeros(gdim)])
-    c = AffineObject([0.0], [0.0])
-        
-    if plot:
-        plotter = pv.Plotter(shape=(nblocks))
-        L2 = fem.functionspace(msh, ("DG", 0))
-        for idx in product(range(nblocks[0]), range(nblocks[1])):
-            plotter.subplot(*idx)
-            tmp = fem.Function(utils.change_element(L2, shape=()))
-            tmp.interpolate(lambda x: chi(x, idx))
-            utils.plot_pyvista(tmp.x.array, utils.change_element(L2, shape=()), f"chi {idx}", plotter)
-        plotter.show(interactive_update=True)
-    
-    return weak_problem(msh, (A,b,c), (f,g,h), dbdry)
-
-def thermal_block_with_output(nh: list[int,int],
-                              nblocks: list[int,int],
-                              output_mode: int = 0,
-                              plot: bool = False) -> tuple[AffineObject[Mu, ufl.Form], AffineObject[Mu, ufl.Form], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
-    r"""Create the parametric thermal block problem.
-
-    The domain is the unit square :math:`\Omega = (0,1)^2`, partitioned into
-    :math:`n_{\mathrm{blocks},1} \times n_{\mathrm{blocks},2}` rectangular blocks.
-    The model uses
+       
+    For ``outputmode = 1`` the output is defined as the flux over the domain boundary, i.e.
 
     .. math::
-        b(x) = 0, \qquad c(x) = 0, \qquad f(x) = 1,
+        s_\mu(u_\mu(x)) = \int_{\partial\Omega} -A_\mu(x) \nabla_x u_\mu(x) n \, \text{d} x
 
-    and a blockwise affine-parametric diffusion tensor
+    For ``outputmode = 2`` the output is defined as the difference in the solution between 
+    the coordinates [0.25, 0.25] and [0.75, 0.75], i.e.
 
     .. math::
-        A_\mu(x) = -\sum_{q=1}^{Q} \theta_q(\mu)\,\chi_q(x)\,I,
-
-    where :math:`\chi_q` are indicator functions of the blocks and
-    :math:`\theta_q(\mu) = \mu_q`.
-
-    All exterior facets are treated as Dirichlet boundaries for 
-    trial and test spaces, i.e. :math:`\Gamma_D = \partial\Omega`
-    and :math:`\Gamma_N = \emptyset` with dirichlet data :math:`g=0`.
+        s_\mu(u_\mu(x)) = u_\mu([0.25, 0.25]) - u_\mu([0.75, 0.75])
 
     Parameters
     ----------
@@ -361,13 +298,17 @@ def thermal_block_with_output(nh: list[int,int],
     nblocks : 
         Number of thermal blocks in each spatial direction.
     output_mode:
-        Choose output. 0 for flux over boundary. 1 for temperature difference beteen coordinates (0.25, 0.25) and (0.75, 0.75)
+        Choose output. 0 for no output. 1 for flux over boundary. 2 for temperature difference beteen coordinates [0.25, 0.25] and [0.75, 0.75]
     plot :
         If ``True``, visualize all block indicator functions :math:`\chi_q`.
 
     Returns
     -------
     See `weak_problem` for details on the return values.
+    l :
+        Output functional for :py:attr:`ulmRBM.fom.FOM.l`.
+    s0 :
+        Contribution of the Dirichlet boundaries to the output.
     """
     msh = mesh.create_unit_square(MPI.COMM_WORLD, *nh)
     gdim = msh.geometry.dim
@@ -405,17 +346,20 @@ def thermal_block_with_output(nh: list[int,int],
             utils.plot_pyvista(tmp.x.array, utils.change_element(L2, shape=()), f"chi {idx}", plotter)
         plotter.show(interactive_update=True)
     
+    if output_mode==0: # No output
+        return weak_problem(msh, (A,b,c), (f,g,h), dbdry)
+    
+    # Output computation
+    
     B, f, U, V = weak_problem(msh, (A,b,c), (f,g,h), dbdry)
 
-    # Output
-    output_case = 1
     tdim = msh.topology.dim
     gdim = msh.geometry.dim
 
     u = ufl.TrialFunction(U.space)
     v = ufl.TrialFunction(V.space)
 
-    if output_case == 1: # Flux over Dirichlet boundary
+    if output_mode == 1: # Flux over Dirichlet boundary
         A = A.apply2data(lambda Aq: utils.interpolate_function(fem.functionspace(msh, ("DG", 0, (gdim, gdim))), Aq))
         A.apply2data(lambda Aq: ufl.inner(Aq * ufl.grad(u), ufl.grad(v)) * ufl.dx)
         
@@ -424,7 +368,7 @@ def thermal_block_with_output(nh: list[int,int],
         l = A.apply2data(lambda Aq: ufl.dot(Aq * ufl.grad(u), ufl.FacetNormal(msh)) * ds)
 
         B, f, l, s0 = assemble_system(B, f, U, V, l)
-    elif output_case == 2: # Temperature difference between coordinates [0.25, 0.25] and [0.75, 0.75] 
+    elif output_mode == 2: # Temperature difference between coordinates [0.25, 0.25] and [0.75, 0.75] 
         l_vecs = utils.point_functional(U.space, np.array([[0.25, 0.25, 0],[0.75, 0.75, 0]]))
         l = l_vecs[0,:]-l_vecs[1,:]
         B, f, l, s0 = apply_dirichletbc(utils.assemble_matrix(B), utils.assemble_vector(f), U, V, l)
