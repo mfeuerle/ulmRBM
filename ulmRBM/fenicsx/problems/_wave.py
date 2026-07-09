@@ -486,6 +486,9 @@ def wave_equation_hilbert(msh: dict[SpaceTimeKey, mesh.Mesh],
         
     .. note::
         In contrast to `wave_equation_structured` or a unstructured discretization based on `weak_problem`, using the modified hilbert transformation leads to a unconditionally stable discretization, i.e. the resulting linear system is always solvable, independent of the space-time mesh (no CFL condition needed!).
+        
+    .. note::
+        Including the Hilbert transformation, this leads to a Galerkin formulation of the wave equation. (Altough still treating it as a Petrov-Galerkin formulation seems to give more stable results in practice.)
     
     Args:
         msh:

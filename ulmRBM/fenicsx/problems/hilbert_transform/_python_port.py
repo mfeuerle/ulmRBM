@@ -57,9 +57,9 @@ def mass_matrix(U: fem.FunctionSpace) -> csr_array:
     t = "[{}]".format(",".join(f"{str(x)}" for x in U.mesh.geometry.x[:,0]))
     
     folder_matlab = str(pathlib.Path(__file__).parent.resolve() / "matlab")
-    subprocess.run([f"cd {folder_matlab};\nmatlab -nodisplay -r \"eval('python_assemble_massmatrix_hilbert({t})'); exit\""], shell=True, check=True)
+    subprocess.run([f"cd {folder_matlab};\nmatlab -nodisplay -r \"eval('python_assemble_massmatrix_hilbert({t})'); exit\""], shell=True, check=True, stdout=subprocess.DEVNULL)
     M = np.loadtxt(f"{folder_matlab}/.masma.txt")
-    subprocess.run([f"rm {folder_matlab}/.masma.txt"], shell=True, check=True)
+    subprocess.run([f"rm {folder_matlab}/.masma.txt"], shell=True, check=True, stdout=subprocess.DEVNULL)
     return csr_array((M[:, 2], (M[:,0]-1,M[:,1]-1)), shape=(n,n))
 
 
@@ -79,7 +79,7 @@ def stiffness_matrix(U: fem.FunctionSpace) -> csr_array:
     t = "[{}]".format(",".join(f"{str(x)}" for x in U.mesh.geometry.x[:,0]))
     
     folder_matlab = str(pathlib.Path(__file__).parent.resolve() / "matlab")
-    subprocess.run([f"cd {folder_matlab};\nmatlab -nodisplay -r \"eval('python_assemble_stiffmatrix_hilbert({t})'); exit\""], shell=True, check=True)
+    subprocess.run([f"cd {folder_matlab};\nmatlab -nodisplay -r \"eval('python_assemble_stiffmatrix_hilbert({t})'); exit\""], shell=True, check=True, stdout=subprocess.DEVNULL)
     S = np.loadtxt(f"{folder_matlab}/.stima.txt")
-    subprocess.run([f"rm {folder_matlab}/.stima.txt"], shell=True, check=True)
+    subprocess.run([f"rm {folder_matlab}/.stima.txt"], shell=True, check=True, stdout=subprocess.DEVNULL)
     return -csr_array((S[:, 2], (S[:,0]-1,S[:,1]-1)), shape=(n,n))
