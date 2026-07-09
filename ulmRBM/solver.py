@@ -33,6 +33,7 @@ from scipy.sparse.linalg import LinearOperator, cg, gmres, lsmr
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from warnings import warn
 
 from ulmRBM.core import Matrix, Vector, KRON_AVAILABLE
 
@@ -231,18 +232,26 @@ class IterativeSolver(Solver):
                 raise ValueError("SPD solver can only be used for square matrices.")
             if self.rtol is not None:   kwargs['rtol']    = self.rtol
             if self.M is not None:      kwargs['M']       = self.M
-            solver = lambda A, b, x0: cg(A, b, x0=x0, **kwargs)[0]
+            def solver(A, b, x0):
+                    x, info = cg(A, b, x0=x0, **kwargs)
+                    if info > 0: warn(f"CG did not converge after {info} iterations.", UserWarning)
+                    return x
         else:
             if A.shape[0] != A.shape[1]:
                 if self.btol is not None:   kwargs['btol']    = self.btol
                 if self.damp is not None:   kwargs['damp']    = self.damp
                 if self.conlim is not None: kwargs['conlim']  = self.conlim
-                solver = lambda A, b, x0: lsmr(A, b, x0=x0, **kwargs)[0]
+                def solver(A, b, x0):
+                    x, info = lsmr(A, b, x0=x0, **kwargs)[:2]  # lsmr info is wild
+                    return x
             else:
                 if self.rtol is not None:   kwargs['rtol']    = self.rtol
                 if self.restart is not None:kwargs['restart'] = self.restart
                 if self.M is not None:      kwargs['M']       = self.M
-                solver = lambda A, b, x0: gmres(A, b, x0=x0, **kwargs)[0]
+                def solver(A, b, x0):
+                    x, info = gmres(A, b, x0=x0, **kwargs)
+                    if info > 0: warn(f"GMRES did not converge after {info} iterations.", UserWarning)
+                    return x
         
         solver = _WrapCallableAsSolver(solver, needs1d=True)  # mostly wrap it to handle multiple rhs correctly
         return solver(A, b, x0)
