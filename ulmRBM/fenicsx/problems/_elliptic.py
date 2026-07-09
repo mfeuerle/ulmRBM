@@ -279,14 +279,6 @@ def thermal_block(nh: list[int,int],
     All exterior facets are treated as Dirichlet boundaries for 
     trial and test spaces, i.e. :math:`\Gamma_D = \partial\Omega`
     and :math:`\Gamma_N = \emptyset` with dirichlet data :math:`g=0`.
-
-    If an output is desired `l` and ``s0`` are returned as well such that
-     
-    .. math::
-        s_\mu(u_\mu(x)) = l(u_\mu(x);\mu) + s0_\mu
-
-    Here ``s0`` is the output contribution of the Dirichlet boundaries and `l` is applied to the 
-    real dofs of the solution :math:`u_\mu(x)`.
        
     For ``outputmode = 1`` the output is defined as the flux over the domain boundary, i.e.
 
@@ -314,9 +306,9 @@ def thermal_block(nh: list[int,int],
     -------
     See `weak_problem` for details on the return values.
     l :
-        1D vector for computing the output :math:`s = lu`, i.e. ``l.shape = (U.dim,)``.
+        Output functional for :py:attr:`ulmRBM.fom.FOM.l`.
     s0 :
-        Contribution of the Dirichlet boundaries to the output (real number).
+        Contribution of the Dirichlet boundaries to the output.
     """
     msh = mesh.create_unit_square(MPI.COMM_WORLD, *nh)
     gdim = msh.geometry.dim
