@@ -149,7 +149,7 @@ def simple_wave(K:int=10,
         terminal_bdry = [mesh.locate_entities_boundary(msh, tdim-1, bdry) for bdry in  terminal_bdry]
         ds = utils.create_measure("ds", msh, tdim-1, terminal_bdry)
         u = ufl.TrialFunction(U.space)
-        l = u * ds
+        l = u * ds(0)
     else:
         raise ValueError('Unknown output case for simple_wave')
 
