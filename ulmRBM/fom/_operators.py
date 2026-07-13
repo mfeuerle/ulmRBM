@@ -20,7 +20,7 @@ from scipy.sparse.linalg import eigsh, LinearOperator, aslinearoperator, onenorm
 from ulmRBM.core import (
     NO_MU, Mu, Matrix, ParametricLinear, Vector, wrap_scalar,
 )
-from ulmRBM.solver import IterativeSolver, Solver, wrap_solver
+from ulmRBM.solver import IterativeSolver, DirectSolver, Solver, wrap_solver
 from ulmRBM.affine import AffineLinear, wrap_affinelinear
 from ulmRBM.products import InnerProduct, OperatorInnerProduct
 
@@ -260,7 +260,11 @@ class ParametricOperator(Generic[Mu]):
         M = self.U(mu)
         Minv = self.U.dual(mu)
         if self.B.shape[0] == self.B.shape[1]:
-            A = OperatorInnerProduct(self.B, self.V.dual, self._solver)
+            if hasattr(self, '_solver'):
+                solver = self._solver
+            else:
+                solver = DirectSolver()
+            A = OperatorInnerProduct(self.B, self.V.dual, solver)
             return A(mu), M, A.dual(mu), Minv
         else:
             A = self.V.dual.restrict(self.B(mu))
