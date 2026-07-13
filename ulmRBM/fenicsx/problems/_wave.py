@@ -128,7 +128,10 @@ def simple_wave(K:int=10,
     if exact_sol is not None:
         data = (exact_sol, exact_mu)
     else:
-        data = (f, [u0, g], [-u1])
+        try:
+            data = (f, [u0, g], [-u1])
+        except Exception as e:
+            data = (f, [u0, g], [lambda *args: -u1(*args)])
     
     A = AffineObject([1.0], [np.diag([1.0] + (gdim-1)*[0.0])])  # u_tt
     A += [(lambda mu: -mu,   np.diag([0.0] + (gdim-1)*[1.0]))]  # - mu * Delta_x u
