@@ -17,6 +17,7 @@ Functions
     point_cells
     point_evaluation
     point_functional
+    projection_matrices
 """
 
 
@@ -49,6 +50,7 @@ __all__ = [
     'point_cells',
     'point_evaluation',
     'point_functional',
+    'projection_matrices'
 ]
 
 def create_measure(integral_type: str, domain: mesh.Mesh, tdim: int, entities: list, tags = None) -> ufl.Measure:
@@ -391,3 +393,48 @@ def point_functional(space: fem.FunctionSpace, points: np.ndarray[np.float64], c
         L[:,i] = point_evaluation(e, points, cells)
         e.x.array[i] = 0.0
     return L
+
+
+
+def projection_matrices(U1: fem.FunctionSpace, U2: fem.FunctionSpace, both: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    r"""Compute projection matrices between two function spaces.
+    
+    The two function spaces :math:`U_1` and :math:`U_2` can be defined on different meshes (e.g. a coarse and a fine mesh) and / or have different elements (e.g. different polynomial degrees). The projection matrix :math:`P_{12}: U_1 \to U_2` interpolates a discrete function in :math:`U_1` into :math:`U_2`, while :math:`P_{21}: U_2 \to U_1` projects a discrete function in :math:`U_2` into :math:`U_1`, where :math:`P_{21} := = (P_{12}^T P_{12})^{-1} P_{12}^T` is the Moore–Penrose pseudoinverse of :math:`P_{12}`.
+    
+    Thus, :math:`P_{21}` only exists, if :math:`P_{12}` has full column rank, i.e. if the functions in :math:`U_1` are linearly independent when interpolated into :math:`U_2` (e.g. if :math:`U_1 \subsetU_2`).
+    
+    This function is in particular usefull, if you want to embedd a coarse function space into a fine function space, as it is the case e.g. in context of gemetric multigrid methods. In this case,  :math:`U_1` should be the coarse function space and :math:`U_2` the fine function space.
+    
+    Args:
+        U1:
+            First function space (coarse).
+        U2:
+            Second function space (fine).
+        both:
+            If True, also compute :math:`P_{21}`. If False, compute only :math:`P_{12}`.
+
+    Returns
+    -------
+    P_12
+        Projection matrix from :math:`U_1` to :math:`U_2`.
+    P_21
+        Projection matrix from :math:`U_2` to :math:`U_1`. (only if ``both=True``)
+    """
+    
+    u_from = fem.Function(U1)
+    u_to   = fem.Function(U2)
+    P_12 = np.empty((U2.dofmap.index_map.size_global, U1.dofmap.index_map.size_global), dtype=np.float64)
+    
+    data = fem.create_interpolation_data(U2, U1, U2.mesh.topology.original_cell_index)
+    
+    for i in range(U1.dofmap.index_map.size_global):
+        u_from.x.array[:] = 0.0
+        u_from.x.array[i] = 1.0
+        u_to.interpolate_nonmatching(u_from, U2.mesh.topology.original_cell_index, data)
+        P_12[:,i] = u_to.x.array[:]
+    
+    if both:
+        P_21 = np.linalg.solve(P_12.T @ P_12, P_12.T)
+        return P_12, P_21
+    else:
+        return P_12
