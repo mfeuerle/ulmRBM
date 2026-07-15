@@ -1,4 +1,4 @@
-# ulmMOR
+# ulmRBM
 
 The documentation can be found [here](https://mfeuerle.github.io/ulmRBM/).
 Was developed using `python=3.12.13`, `numpy=2.4.3`, `scipy=1.17.1` and `fenics-dolfinx=0.10` (optional for building full-order models)
