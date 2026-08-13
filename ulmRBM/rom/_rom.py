@@ -325,12 +325,12 @@ class ROM(FOM[Mu]):
         Then, the following absolute error bounds are available:
         
         .. math::
-            \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{LB}}(\mu)} \leq \|u(\mu) - U_N u_N(\mu)\|_U \leq \frac{\|r(\mu)\|_{V'}}{\sigma_{\text{LB}}(\mu)}
+            \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{UB}}(\mu)} \leq \|u(\mu) - U_N u_N(\mu)\|_U \leq \frac{\|r(\mu)\|_{V'}}{\sigma_{\text{LB}}(\mu)}
             
         And the following relative error bounds are available:
         
         .. math::
-            \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{LB}}(\mu)}\frac{\sigma_{\text{UB}}(\mu)}{\|f(\mu)\|_{V'}} \leq \frac{\|u(\mu) - U_N u_N(\mu)\|_U}{\|u(\mu)\|_U} \leq \frac{\|r(\mu)\|_{V'}}{\sigma_{\text{LB}}(\mu)}\frac{\gamma_{\text{UB}}(\mu)}{\|f(\mu)\|_{V'}}
+            \frac{\|r(\mu)\|_{V'}}{\gamma_{\text{UB}}(\mu)}\frac{\sigma_{\text{LB}}(\mu)}{\|f(\mu)\|_{V'}} \leq \frac{\|u(\mu) - U_N u_N(\mu)\|_U}{\|u(\mu)\|_U} \leq \frac{\|r(\mu)\|_{V'}}{\sigma_{\text{LB}}(\mu)}\frac{\gamma_{\text{UB}}(\mu)}{\|f(\mu)\|_{V'}}
         
         Args:
             mu:
@@ -353,21 +353,9 @@ class ROM(FOM[Mu]):
             Due to the square-root effect, the bounds are only accurate up to ``sqrt(eps)`` where ``eps`` is the machine precision. Thus, for smaller errors, the lower bounds might be wrong and the upper bounds might be overestimated.
         """
             
-        if alb or rlb:
-            if isinstance(self._fom_stability_estimator, EfficientConstantEstimator):
-                beta_UB = self._fom_stability_estimator.upper_bound(mu)
-            else:
-                raise ValueError("(Relative) lower bound of the error is only possible if the stability estimator is efficient.")
-            
-        if rlb:
-            if isinstance(self._fom_continuity_estimator, EfficientConstantEstimator):
-                gamma_LB = self._fom_continuity_estimator.lower_bound(mu)
-            else:
-                raise ValueError("Relative lower bound of the error is only possible if the continuity estimator is efficient.")
-            
-        if aub or rub:
+        if aub or rub or rlb:
             beta_LB = self._fom_stability_estimator.lower_bound(mu)
-        if rub:
+        if alb or rub or rlb:
             gamma_UB = self._fom_continuity_estimator.upper_bound(mu)
             
         if rlb or rub:
@@ -378,9 +366,9 @@ class ROM(FOM[Mu]):
             
         err = dict()
         if aub: err['aub'] = r / beta_LB
-        if alb: err['alb'] = r / gamma_LB
+        if alb: err['alb'] = r / gamma_UB
         if rub: err['rub'] = gamma_UB/beta_LB * r/f
-        if rlb: err['rlb'] = beta_UB/gamma_LB * r/f
+        if rlb: err['rlb'] = beta_LB/gamma_UB * r/f
         return err
 
         

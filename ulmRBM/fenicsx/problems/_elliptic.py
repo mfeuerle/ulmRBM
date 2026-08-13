@@ -346,13 +346,15 @@ def thermal_block(nh: list[int,int],
             utils.plot_pyvista(tmp.x.array, utils.change_element(L2, shape=()), f"chi {idx}", plotter)
         plotter.show(interactive_update=True)
     
+    
+    B, f, U, V = weak_problem(msh, (A,b,c), (f,g,h), dbdry)
+    
     if output_mode==0: # No output
-        return weak_problem(msh, (A,b,c), (f,g,h), dbdry)
+        B, f = assemble_system(B, f, U, V)
+        return B, f, U, V
     
     # Output computation
     
-    B, f, U, V = weak_problem(msh, (A,b,c), (f,g,h), dbdry)
-
     tdim = msh.topology.dim
     gdim = msh.geometry.dim
 

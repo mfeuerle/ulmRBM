@@ -157,6 +157,7 @@ def greedy_rbm(
         start = 1
         if display: print(f"{time.time() - start_time:6.1f}s: Iteration {0:3d}:")
         _perform_iteration(0)
+        err = np.nan
     
     ########################
     # main loop

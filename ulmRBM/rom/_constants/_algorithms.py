@@ -88,6 +88,8 @@ def greedy_constant_estimator(
         original_idx = np.delete(original_idx, 0)
         mu_train = np.delete(mu_train, 0, axis=0)
         selected_mu_idx.append(0)
+        
+        err = np.nan
 
 
     for n in range(start, N):

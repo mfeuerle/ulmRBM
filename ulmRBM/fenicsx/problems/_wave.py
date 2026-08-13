@@ -31,7 +31,7 @@ def simple_wave(K:int=10,
                 u0: float | AffineObject = 0, 
                 u1: float | AffineObject = 0, 
                 exact_sol = None, exact_mu: float = 1.0,
-                output_mode: int = 0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], SpaceTimeFEniCSxSpaceWithDirichletBCs, SpaceTimeFEniCSxSpaceWithDirichletBCs, AffineLinear[Mu,Vector], AffineLinear[Mu,Number],]:
+                output_mode: int = 0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs, AffineLinear[Mu,Vector], AffineLinear[Mu,Number],]:
     r"""Parametric wave problem with output.
     
     Let :math:`\mu>0` be the wave speed. For :math:`I=(0,T)` and :math:`\Omega=\subset \mathbb{R}^d`, :math:`d\in\{1,2\}` consider the wave equation
@@ -105,7 +105,7 @@ def simple_wave(K:int=10,
     min_nt = np.inf
     for i in range(Omega.shape[1]):
         min_nt = min(min_nt, np.ceil((I[1]-I[0])/((Omega[1][i]-Omega[0][i])/(nx[i-1]+1))))
-    print(f"To ensure the CFL condition, K should be at least ``mu * {min_nt[0]:.2f}``.")
+    print(f"To ensure the CFL condition, K should be at least ``sqrt(mu) * {min_nt[0]:.2f}``.")
     
     n = [K] + nx
     Q = np.hstack([I, Omega])
@@ -361,7 +361,7 @@ def simple_wave_structured(K: int = 10,
 
     gdim = {SPACE: msh[SPACE].geometry.dim}
     
-    print(f"To ensure the CFL condition, K should be at least ``mu * {np.min(nx):.0f}``.")
+    print(f"To ensure the CFL condition, K should be at least `` sqrt(mu) * {np.min(nx):.0f}``.")
 
     A = AffineObject([lambda mu: mu], [-np.eye(gdim[SPACE])])
     b = AffineObject([0.0], [np.ones(gdim[SPACE])])

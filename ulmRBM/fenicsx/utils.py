@@ -180,7 +180,7 @@ def change_element(space: fem.FunctionSpace, shape: int =None, degree: int = Non
     return fem.functionspace(space.mesh, el_new)
 
 
-def plot_pyvista(u: np.ndarray, space: fem.FunctionSpace, name: str, plotter: pv.Plotter):
+def plot_pyvista(u: np.ndarray, space: fem.FunctionSpace, name: str, plotter: pv.Plotter, scale: tuple[float,float,float] = (1,1,1)):
     try:
         # Standard case: nodal data (CG, DG with degree > 0, ...)
         cells, types, x = plot.vtk_mesh(space)
@@ -213,10 +213,22 @@ def plot_pyvista(u: np.ndarray, space: fem.FunctionSpace, name: str, plotter: pv
         mesh_to_plot = grid_sep.warp_by_scalar()
         # mesh_to_plot = grid
 
-    mesh_to_plot.rotate_z(180, inplace=True)
+    # plotter.add_mesh(mesh_to_plot, show_edges=False).scale = scale
+    # plotter.show_grid(xtitle='x1', ytitle='x2', ztitle='u(x)')    
+
+    import vtk
+
+
+    camera = plotter.renderer.GetActiveCamera()
+    transform = vtk.vtkTransform()
+    transform.Scale(*scale)
+    camera.SetModelTransformMatrix(transform.GetMatrix())
+    
     plotter.add_mesh(mesh_to_plot, show_edges=False)
     plotter.show_grid(xtitle='x1', ytitle='x2', ztitle='u(x)')
-    plotter.add_text(name)
+        
+    plotter.camera.Azimuth(180)
+    if name is not None: plotter.add_text(name)
     
     
 def isclose(x: np.ndarray, reference_points: np.ndarray, *args, **kwargs) -> np.ndarray[bool]:
