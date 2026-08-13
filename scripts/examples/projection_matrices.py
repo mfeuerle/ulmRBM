@@ -40,7 +40,7 @@ P_CF, P_FC = utils.projection_matrices(U[LVL.COARSE], U[LVL.FINE], both=True)
 Q_FC = utils.projection_matrices(U[LVL.FINE], U[LVL.COARSE])
 
 
-fig = plt.figure('P')
+fig = plt.figure()
 fig.suptitle('Projections based on coarse to fine interpolation')
 ax = fig.add_subplot(2, 2, 1)
 ax.plot(*arrange_dofs_for_plot(U[LVL.COARSE], u[LVL.COARSE]), 'o-', label='coarse')

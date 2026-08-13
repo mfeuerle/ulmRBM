@@ -95,8 +95,11 @@ def structured(K, nx, f, g, u0, u1):
 ########################################
 
 def hilbert(K, nx, f, g, u0, u1):
+    try: 
+        B, f, U_fnx, V_fnx = simple_wave_hilbert(K, nx, f, g, u0, u1)
+    except Exception as e:
+        raise ValueError(f"Probably Matlab not available, remove 'hilbert' from PROBLEMS.") from e
     
-    B, f, U_fnx, V_fnx = simple_wave_hilbert(K, nx, f, g, u0, u1)
     U_H10 = norms.space_time(U_fnx, 
                         [{TIME: 'l2',  SPACE: 'h10'},
                          {TIME: 'h10', SPACE: 'l2'}],

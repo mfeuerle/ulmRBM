@@ -214,7 +214,3 @@ __marimo__/
 
 # cpython profiling data
 **/*.prof
-
-
-# result files in scripts/feuerle/FLSU_PartII
-scripts/feuerle/**/plot_*_data.txt
