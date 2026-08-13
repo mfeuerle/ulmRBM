@@ -11,7 +11,6 @@ mu_range = (0.05, 2.0)
 solver = DirectSolver()
 
 B, f, U, V = thermal_block([15, 15], nblocks)
-B, f = assemble_system(B, f, U, V)
 
 print(f"System matrix shape: {B.shape}")
 print(f"Number of affine terms in B: {len(B)}")
