@@ -719,9 +719,21 @@ def primaldual_greedy_rbm(
             print(f"{time.time() - start_time:6.1f}s:\t Max. dual error = {err_dual:.2e} at mu_train[{original_idx[idx_dual]}]".expandtabs(n_disp_t))
             print(f"{time.time() - start_time:6.1f}s:\t Max. output error = {err_out:.2e} at mu_train[{original_idx[idx_out]}]".expandtabs(n_disp_t))
             print(f"{time.time() - start_time:6.1f}s:\t Primal:".expandtabs(n_disp_t))
-        _perform_iteration(idx, fom, rom, u_fom)
+        # Primal greedy iteration
+        if mu_select_mode==0:
+            _perform_iteration(idx, fom, rom, u_fom)
+        elif mu_select_mode==1:
+            _perform_iteration(idx_out, fom, rom, u_fom)
+        else:
+            raise ValueError()
+        # Dual greedy iteration
         if display: print(f"{time.time() - start_time:6.1f}s:\t Dual:".expandtabs(n_disp_t))
-        _perform_iteration(idx_dual, fom.dual, rom.dual, u_fom_dual)
+        if mu_select_mode==0:
+            _perform_iteration(idx_dual, fom.dual, rom.dual, u_fom_dual)
+        elif mu_select_mode==1:
+            _perform_iteration(idx_out, fom.dual, rom.dual, u_fom_dual)
+        else:
+            raise ValueError()
     
     ########################
     # finishing up
