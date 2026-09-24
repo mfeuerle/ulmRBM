@@ -15,7 +15,7 @@ from warnings import warn
 
 from ulmRBM.core import Mu, Matrix, Vector
 from ulmRBM.solver import Solver, DirectSolver
-from ulmRBM.fom import Model, FOM, GalerkinFOM, PrimalDualModel
+from ulmRBM.fom import Model, FOM, GalerkinFOM, PrimalDualModel, PrimalDualFOM
 from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 from ulmRBM.affine import AffineLinear, wrap_affinelinear
 
@@ -489,12 +489,13 @@ class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
         self._add_basis_U(basis)
     
     def orthonormalize(self, U: InnerProduct[Mu] | Matrix | None = None):
-        self._orthonormalize_U(U)
+        self._orthonormalize_U(U)        
         
-        
-class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
+class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
+    r"""Primal-dual reduced-order Petrov-Galerkin model given, see `ROM` and `PrimalDualModel`.
+    """
     
-    dual: ROM[Mu]
+    dual: PrimalDualROM[Mu]
     """Dual model."""
 
     _B_mixed: AffineLinear[Mu, Matrix] | None = None
@@ -507,57 +508,6 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
         self._assemble_B_mixed()
         return self._B_mixed_private
     
-    def __init__(self: PrimalDualROM[Mu], dual: ROM[Mu]):
-        self.dual = dual
-        self.dual._fom_stability_estimator  = self._fom_stability_estimator
-        self.dual._fom_continuity_estimator = self._fom_continuity_estimator
-        
-        old_mark_for_assembly = self._mark_for_assembly
-        def patched_mark_for_assembly(U: bool = False, V: bool = False):
-            old_mark_for_assembly(U, V)
-            if U: self._need_assemble_B_mixed = True
-        self._mark_for_assembly = patched_mark_for_assembly
-        
-        dual_old_mark_for_assembly = self.dual._mark_for_assembly
-        def dual_patched_mark_for_assembly(U: bool = False, V: bool = False):
-            dual_old_mark_for_assembly(U, V)
-            if U: self._need_assemble_B_mixed = True
-        self.dual._mark_for_assembly = dual_patched_mark_for_assembly
-    
-    def _assemble_B_mixed(self):
-        if self._need_assemble_B_mixed:
-            self._need_assemble_B_mixed = False
-            if self.dual.U_basis is not None and self.U_basis is not None:
-                self._B_mixed_private = self.dual.U_basis.T @ self.fom.B @ self.U_basis
-            else:
-                self._B_mixed_private = None
-                
-    def assemble(self):
-        ROM.assemble(self)
-        self.dual.assemble()
-        self._assemble_B_mixed()
-
-    def output(self: PrimalDualROM[Mu], mu: Mu, u: Vector | None = None, z: Vector | None = None) -> Vector:
-        if self.l is None:
-            raise ValueError("No output functional defined for this model.")
-        if u is None: u = self.solve(mu)
-        if z is None: z = self.dual.solve(mu)
-        return (self.l(mu) @ u # Classical primal output
-                + self.dual.output(mu, z) + z.T @ self._B_mixed(mu) @ u) # Primal dual correction (primal residual evaluated at dual solution)
-    
-    def output_error_bound(self: PrimalDualROM[Mu], mu: Mu, u: Vector = None, z: Vector = None) -> float:
-        if u is None: u = self.solve(mu)
-        if z is None: z = self.dual.solve(mu)
-        sigma = self._fom_stability_estimator.lower_bound(mu)
-        r_primal = self._residual_evaluator.dual_norm(mu, u)
-        r_dual = self.dual._residual_evaluator.dual_norm(mu, z)
-        return r_primal * r_dual / sigma
-        
-        
-class PrimalDualROM(_PrimalDualROM_Mixin[Mu], ROM[Mu]):
-    r"""Primal-dual reduced-order Petrov-Galerkin model given, see `ROM` and `PrimalDualModel`.
-    """
-    
     def __init__(self, 
                  fom: PrimalDualModel[Mu],
                  stability: StabilityEstimator[Mu],
@@ -565,7 +515,8 @@ class PrimalDualROM(_PrimalDualROM_Mixin[Mu], ROM[Mu]):
                  primal_trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
                  dual_trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
                  solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
-                 residual: list[None | str] = [None, None]):
+                 residual: list[None | str] = [None, None],
+                 _dual: PrimalDualROM[Mu] = None):
         r"""
         Args:
             fom:
@@ -589,21 +540,72 @@ class PrimalDualROM(_PrimalDualROM_Mixin[Mu], ROM[Mu]):
         except TypeError:
             solver = [solver, solver]
             
+        try:
+            residual = list(residual)
+        except TypeError:
+            residual = [residual, residual]
+            
         if len(solver) != 2:
             raise ValueError("Solver must be a list of two solvers for primal and dual.")
         
-        ROM.__init__(self, fom, stability, continuity, primal_trial2test, solver[0], residual[0])
+        if len(residual) != 2:
+            raise ValueError("Residual must be a list of two residual evaluation methods for primal and dual.")
         
-        dual = ROM(fom.dual, ExactStability(fom.dual), ExactContinuity(fom.dual), dual_trial2test, solver[1], residual[1])
+        super().__init__(fom, stability, continuity, primal_trial2test, solver[0], residual[0])
         
-        super().__init__(dual)
+        if _dual is None:
+            dual = PrimalDualROM(fom.dual, ExactStability(fom.dual), ExactContinuity(fom.dual), dual_trial2test, None, solver[1], residual[1], _dual=self)
+            dual._fom_stability_estimator  = self._fom_stability_estimator
+            dual._fom_continuity_estimator = self._fom_continuity_estimator
+        else:
+            dual = _dual
+            
+        self.dual = dual
         
         
-class PrimalDualGalerkinROM(_PrimalDualROM_Mixin[Mu], GalerkinROM[Mu]):
+    def _assemble_B_mixed(self):
+        if self._need_assemble_B_mixed:
+            self._need_assemble_B_mixed = False
+            self.dual._need_assemble_B_mixed = False
+            if self.dual.U_basis is not None and self.U_basis is not None:
+                self._B_mixed_private = self.dual.U_basis.T @ self.fom.B @ self.U_basis
+            else:
+                self._B_mixed_private = None
+            self.dual._B_mixed_private = self._B_mixed_private.T
+                
+    def _mark_for_assembly(self, U: bool = False, V: bool = False):
+        super()._mark_for_assembly(U, V)
+        if U: 
+            self._need_assemble_B_mixed = True
+            self.dual._need_assemble_B_mixed = True
+        
+    def assemble(self):
+        super().assemble()
+        super(PrimalDualROM, self.dual).assemble()
+        self._assemble_B_mixed()
+
+    def output(self: PrimalDualROM[Mu], mu: Mu, u: Vector | None = None, z: Vector | None = None) -> Vector:
+        if self.l is None:
+            raise ValueError("No output functional defined for this model.")
+        if u is None: u = self.solve(mu)
+        if z is None: z = self.dual.solve(mu)
+        return (self.l(mu) @ u # Classical primal output
+                + super(PrimalDualROM, self.dual).output(mu, z) + z.T @ self._B_mixed(mu) @ u) # Primal dual correction (primal residual evaluated at dual solution)
+    
+    def output_error_bound(self: PrimalDualROM[Mu], mu: Mu, u: Vector = None, z: Vector = None) -> float:
+        if u is None: u = self.solve(mu)
+        if z is None: z = self.dual.solve(mu)
+        sigma = self._fom_stability_estimator.lower_bound(mu)
+        r_primal = self._residual_evaluator.dual_norm(mu, u)
+        r_dual = self.dual._residual_evaluator.dual_norm(mu, z)
+        return r_primal * r_dual / sigma
+        
+        
+class PrimalDualGalerkinROM(GalerkinROM[Mu], PrimalDualROM[Mu]):
     r"""Primal-dual reduced-order Galerkin model given, see `GalerkinROM` and `PrimalDualModel`.
     """
 
-    dual: GalerkinROM[Mu]
+    dual: PrimalDualGalerkinROM[Mu]
     """Dual model."""
     
     def __init__(self, 
@@ -611,7 +613,8 @@ class PrimalDualGalerkinROM(_PrimalDualROM_Mixin[Mu], GalerkinROM[Mu]):
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
                  solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
-                 residual: list[None | str] = [None, None]):
+                 residual: list[None | str] = [None, None],
+                 _dual: PrimalDualGalerkinROM[Mu] = None):
         r"""
         Args:
             fom:
@@ -631,11 +634,24 @@ class PrimalDualGalerkinROM(_PrimalDualROM_Mixin[Mu], GalerkinROM[Mu]):
         except TypeError:
             solver = [solver, solver]
             
+        try:
+            residual = list(residual)
+        except TypeError:
+            residual = [residual, residual]
+
         if len(solver) != 2:
             raise ValueError("Solver must be a list of two solvers for primal and dual.")
         
-        GalerkinROM.__init__(self, fom, stability, continuity, solver[0], residual[0])
+        if len(residual) != 2:
+            raise ValueError("Residual must be a list of two residual evaluation methods for primal and dual.")
+
+        super().__init__(fom, stability, continuity, solver[0], residual[0])
         
-        dual = GalerkinROM(fom.dual, ExactStability(fom.dual), ExactContinuity(fom.dual), solver[1], residual[1])
-        
-        super().__init__(dual)
+        if _dual is None:
+            dual = PrimalDualGalerkinROM(fom.dual, ExactStability(fom.dual), ExactContinuity(fom.dual), solver[1], residual[1], _dual=self)
+            dual._fom_stability_estimator  = self._fom_stability_estimator
+            dual._fom_continuity_estimator = self._fom_continuity_estimator
+        else:
+            dual = _dual
+            
+        self.dual = dual

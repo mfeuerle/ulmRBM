@@ -316,7 +316,7 @@ class PrimalDualFOM(FOM[Mu], PrimalDualModel[Mu]):
         dual = FOM(B.T, -l, V, U, -f, solver=solver[1], supremizer=dual_supremizer)
         PrimalDualModel.__init__(self, dual)
         
-class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualModel[Mu]):
+class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualFOM[Mu]):
     r"""Primal-dual full-order Galerkin model given by a parametric linear system of equations.
     
     For the primal model, see `GalerkinFOM`, for the dual model see `PrimalDualModel`.
