@@ -72,12 +72,16 @@ class ROM(FOM[Mu]):
     _trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] | None = None
     r"""Internal storage if a custom trial2test function is provided."""
     
-    _need_assemble: bool
-    r"""Flag to indicate whether the reduced system matrices and vectors need to be reassembled."""
+    _need_assemble_B: bool = False
+    r"""Flag to indicate whether the reduced system matrices needs to be reassembled."""
+    _need_assemble_f: bool = False
+    r"""Flag to indicate whether the reduced right-hand side needs to be reassembled."""
+    _need_assemble_l: bool = False
+    r"""Flag to indicate whether the reduced output functional needs to be reassembled."""
     
     @property
     def B(self) -> AffineLinear[Mu, Matrix]:
-        self.assemble()
+        self._assemble_B()
         return self._B
     @B.setter
     def B(self, value: AffineLinear[Mu, Matrix]):
@@ -85,7 +89,7 @@ class ROM(FOM[Mu]):
         
     @property
     def f(self) -> AffineLinear[Mu, Vector]:
-        self.assemble()
+        self._assemble_f()
         return self._f
     @f.setter
     def f(self, value: AffineLinear[Mu, Vector]):
@@ -93,7 +97,7 @@ class ROM(FOM[Mu]):
         
     @property
     def l(self) -> AffineLinear[Mu, Matrix] | None:
-        self.assemble()
+        self._assemble_l()
         return self._l
     @l.setter
     def l(self, value: AffineLinear[Mu, Matrix] | None):
@@ -104,8 +108,8 @@ class ROM(FOM[Mu]):
         return self._U_basis
     @U_basis.setter
     def U_basis(self, value: Vector):
+        self._mark_for_assembly(U=True)
         self._U_basis = value
-        self._need_assemble = True
         self.U = self.fom.U.restrict(self._U_basis)
         
     @property
@@ -113,8 +117,8 @@ class ROM(FOM[Mu]):
         return self._V_basis
     @V_basis.setter
     def V_basis(self, value: AffineLinear[Mu, Vector]):
+        self._mark_for_assembly(V=True)
         self._V_basis = wrap_affinelinear(value)
-        self._need_assemble = True
         self.V = self.fom.V.restrict(self._V_basis)
         
     @property
@@ -177,23 +181,58 @@ class ROM(FOM[Mu]):
         else:
             raise ValueError("Invalid option for 'residual'. Must be either 'affine' or 'full' or None.")
         
+    
+    def _mark_for_assembly(self, U: bool = False, V: bool = False):
+        r"""Mark components of the reduced-order model for (re)assembly.
+        
+        Args:
+            U:
+                If ``True``, makrs every component that depends on the trial space basis for reassembly.
+            V:
+                If ``True``, makrs every component that depends on the test space basis for reassembly.
+        """
+        if U:
+            self._need_assemble_B = True
+            self._need_assemble_l = True
+        if V:
+            self._need_assemble_B = True
+            self._need_assemble_f = True
+            
+    def _assemble_B(self):
+        r"""Assemble the reduced system matrix :math:`B_N(\mu) = V_N^T(\mu) B(\mu) U_N`."""
+        if self._need_assemble_B:
+            self._need_assemble_B = False
+            if self.V_basis is not None and self.U_basis is not None:
+                self._B = self.V_basis.T @ self.fom.B @ self.U_basis
+            else:
+                self._B = None
+    
+    def _assemble_f(self):
+        r"""Assemble the reduced right-hand side vector :math:`f_N(\mu) = V_N^T(\mu) f(\mu)`."""
+        if self._need_assemble_f:
+            self._need_assemble_f = False
+            if self.V_basis is not None:
+                self._f = self.V_basis.T @ self.fom.f
+            else:
+                self._f = None
+                
+    def _assemble_l(self):
+        r"""Assemble the reduced output functional :math:`l_N(\mu) = l(\mu) U_N`."""
+        if self._need_assemble_l:
+            self._need_assemble_l = False
+            if self.U_basis is not None and self.fom.l is not None:
+                self._l = self.fom.l @ self.U_basis
+            else:
+                self._l = None
         
     def assemble(self):
-        r"""Assemble the reduced-order model system matrices and vectors based on the current trial and test bases.
+        r"""Assemble the reduced-order model.
         
-        This method is in most cases called internally anyways. But if you want to ensure, that the reduced-order model is ready for the online stage, you mmight call this method.
+        After calling this methid, the reduced-order model is setup for the online phase.
         """
-        if self._need_assemble:
-            self._need_assemble = False
-            self.B = None
-            self.f = None
-            self.l = None
-            if self.V_basis is not None:
-                self.f = self.V_basis.T @ self.fom.f
-                if self.U_basis is not None:
-                    self.B = self.V_basis.T @ self.fom.B @ self.U_basis
-            if self.U_basis is not None and self.fom.l is not None:
-                self.l = self.fom.l @ self.U_basis
+        self._assemble_B()
+        self._assemble_f()
+        self._assemble_l()
         
         
     def add_basis(self, basis: Vector):
@@ -451,6 +490,9 @@ class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
             raise ValueError("The FOM must be a GalerkinFOM for a GalerkinROM.")
         trial2test = lambda basis: wrap_affinelinear(basis)
         ROM.__init__(self, fom, stability, continuity, trial2test, solver, residual)
+        
+    def _mark_for_assembly(self, U = False, V = False):
+        super()._mark_for_assembly(U, U)
 
     def add_basis(self, basis: AffineLinear[Mu, Vector] | Vector):
         self._add_basis_U(basis)
@@ -466,11 +508,12 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
 
     _B_mixed: AffineLinear[Mu, Matrix] | None = None
     _B_mixed_private: AffineLinear[Mu, Matrix] | None = None
-    _need_assemble_mixed: bool = False  # catch changes in the dual model that require reassembly of the mixed operator
+    _need_assemble_B_mixed: bool = False
+    r"""Flag to indicate whether the mixed operator needs to be reassembled."""
 
     @property
     def _B_mixed(self) -> AffineLinear[Mu, Matrix]:
-        self.assemble()
+        self._assemble_B_mixed()
         return self._B_mixed_private
     
     @_B_mixed.setter
@@ -481,21 +524,29 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
         self.dual = dual
         self.dual._fom_stability_estimator  = self._fom_stability_estimator
         self.dual._fom_continuity_estimator = self._fom_continuity_estimator
-        old_assemble = self.dual.assemble
-        def dual_assemble():
-            if self.dual._need_assemble:
-                self._need_assemble_mixed = True
-                old_assemble()
-        self.dual.assemble = dual_assemble
-
-    def assemble(self: PrimalDualROM[Mu]):
-        if self._need_assemble or self._need_assemble_mixed:
-            if self.dual.U_basis.T is not None and self.U_basis is not None:
-                self._B_mixed = self.dual.U_basis.T @ self.fom.B @ self.U_basis
-            else:
-                self._B_mixed = None
+        
+        old_mark_for_assembly = self.dual._mark_for_assembly
+        def patched_mark_for_assembly(U: bool = False, V: bool = False):
+            old_mark_for_assembly(U, V)
+            if U: self._need_assemble_B_mixed = True
+        self.dual._mark_for_assembly = patched_mark_for_assembly
+        
+    def _mark_for_assembly(self, U: bool = False, V: bool = False):
+        ROM._mark_for_assembly(self, U, V)
+        if U: self._need_assemble_B_mixed = True
+    
+    def _assemble_B_mixed(self):
+        if self._need_assemble_mixed:
             self._need_assemble_mixed = False
+            if self.dual.U_basis.T is not None and self.U_basis is not None:
+                self._B_mixed_private = self.dual.U_basis.T @ self.fom.B @ self.U_basis
+            else:
+                self._B_mixed_private = None
+                
+    def assemble(self):
         ROM.assemble(self)
+        self.dual.assemble()
+        self._assemble_B_mixed()
 
     def output(self: PrimalDualROM[Mu], mu: Mu, u: Vector | None = None, z: Vector | None = None) -> Vector:
         if self.l is None:
