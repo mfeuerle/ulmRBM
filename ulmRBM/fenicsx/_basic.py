@@ -11,6 +11,7 @@ from ulmRBM.affine._affine import _ConstructNew
 
 
 __all__ = [
+    'split_components',
     'apply_dirichletbc',
     'assemble_system',
     'AffineDirichletBC',
@@ -42,7 +43,10 @@ class AffineDirichletBC(AffineLinear[Mu, np.ndarray]):
             raise ValueError("Only one of entities or dofs can be given to define the boundary condition.")
         
         if dofs is None:
-            dofs = fem.locate_dofs_topological(space, space.mesh.topology.dim-1, entities)
+            dofs_tmp = fem.locate_dofs_topological(space, space.mesh.topology.dim-1, entities)
+        else:
+            dofs_tmp = np.asarray(dofs, dtype='int32')
+        dofs = utils.dirichletbc(space, 0.0, dofs_tmp).dof_indices()[0]
         
         
         if not isinstance(g, AffineObject):
@@ -63,15 +67,17 @@ class AffineDirichletBC(AffineLinear[Mu, np.ndarray]):
             except AttributeError:
                 pass
 
-            if np.isscalar(g) or g.shape == ():
+            if np.isscalar(g) or g.shape == () or g.shape == (1,):
                 return np.full(len(dofs), g)
+            if g.shape == (space.dofmap.index_map_bs,):
+                return np.concatenate([np.asarray(g)] * len(dofs))
             else:
                 if g.ndim != 1 and g.shape[1] != 1:
                     raise ValueError("Boundary condition values must be a scalar or a 1D array.")
                 g = g.reshape(-1)
                 if len(g) == len(dofs):
                     return g
-                elif len(g) == space.dofmap.index_map.size_global:
+                elif len(g) == space.dofmap.index_map.size_global * space.dofmap.index_map_bs:
                     return g[dofs]
                 else:
                     raise ValueError("Boundary condition values must have length equal to the number of dofs in the function space or the number of dofs restricted by the boundary condition.")
@@ -80,7 +86,7 @@ class AffineDirichletBC(AffineLinear[Mu, np.ndarray]):
         if isinstance(g, AffineLinear):
             g = g.apply2data(lambda gq: as_vector(gq))
         else:
-            g = g.apply2data(lambda gq: utils.dirichletbc(space, gq, dofs))
+            g = g.apply2data(lambda gq: utils.dirichletbc(space, gq, dofs_tmp))
             g = g.apply2data(lambda gq: as_vector(gq.g))
         g = g.compress()
                     
@@ -89,7 +95,7 @@ class AffineDirichletBC(AffineLinear[Mu, np.ndarray]):
         """Underlying function space of the boundary condition"""
         self.dofs: np.ndarray[int] = dofs
         """List of dofs restricted by this boundary condition"""
-        self.dim: int = space.dofmap.index_map.size_global
+        self.dim: int = space.dofmap.index_map.size_global * space.dofmap.index_map_bs
         """Dimension of the function space, i.e. total number of dofs (free and restricted)"""
         
     def _construct_new(self, theta, data, type: _ConstructNew = _ConstructNew.SAME) -> AffineLinear[Mu, np.ndarray]:
@@ -160,11 +166,11 @@ class FEniCSxSpaceWithDirichletBCs:
                 Whether to warn, if there are dofs set by multiple boundary conditions.
         """
         
-        assert all(bc.space == space for bc in bcs)
+        # assert all(bc.space == space for bc in bcs)
         
         self.space: fem.FunctionSpace = space
         "Function space"
-        self.dim: int = space.dofmap.index_map.size_global
+        self.dim: int = space.dofmap.index_map.size_global * space.dofmap.index_map_bs
         "Dimension of the space (number of free + restricted dofs)."
         self.bcs: list[AffineDirichletBC] = bcs
         "List of all dirichlet boundary conditions of this space."
@@ -240,10 +246,38 @@ def free_dofs(dim: int, dofs: list[np.ndarray], warn: bool = True) -> np.ndarray
 
 
     
+def split_components(u: np.ndarray, spaces: list[FEniCSxSpaceWithDirichletBCs]) -> list[np.ndarray]:
+    r"""Split a concatenated vector into components for multiple spaces.
+
+    Given a 1D array ``u`` that contains concatenated subvectors corresponding to the free degrees-of-freedom of several :class:`FEniCSxSpaceWithDirichletBCs`, return a list with each subvector in the same order as the provided spaces.
+
+    Args:
+        u:
+            1D numpy array containing the concatenated components for all provided spaces.
+        spaces:
+            One or more :class:`FEniCSxSpaceWithDirichletBCs` objects. The order of the spaces determines how ``u`` is sliced.
+
+    Returns:
+        A list of 1D numpy arrays where the i-th element is the subvector containing the dofs of ``u`` corresponding to ``spaces[i]``.
+    """
+    
+    n = [s._ndofs for s in spaces]
+    n = np.cumsum([0] + n, dtype=int)
+    
+    if u.shape[0] != n[-1]:
+        n = [s.dim for s in spaces]
+        n = np.cumsum([0] + n, dtype=int)
+        if u.shape[0] != n[-1]:
+            raise ValueError(f"Length of u ({u.shape[0]}) does not match total ({n[-1]}) or free dofs ({sum(s._ndofs for s in spaces)}) of all spaces.")
+        
+    return [u[n[i]:n[i+1]] for i in range(len(spaces))]
+
+
+    
 def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sparray], 
                       f: np.ndarray | AffineObject[Mu, np.ndarray], 
-                      U: FEniCSxSpaceWithDirichletBCs, 
-                      V: FEniCSxSpaceWithDirichletBCs,
+                      U: FEniCSxSpaceWithDirichletBCs | list[FEniCSxSpaceWithDirichletBCs], 
+                      V: FEniCSxSpaceWithDirichletBCs | list[FEniCSxSpaceWithDirichletBCs],
                       l: np.ndarray | AffineObject[Mu, np.ndarray] | None = None) -> tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray]] | tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray], AffineLinear[Mu, np.ndarray], AffineLinear[Mu, np.ndarray]]:
     r"""Apply Dirichlet boundary conditions to a linear system.
     
@@ -281,7 +315,7 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sp
         f :
             Right-hand side vector assembled on the full test space, i.e. ``f.shape = (V.dim,)``.
         U :
-            Trial space including the Dirichlet boundary data :math:`g` and the and the dof split :math:`F_U,D_U`.
+            Trial space including the Dirichlet boundary data :math:`g` and the dof split :math:`F_U,D_U`.
         V :
             Test space including the dof split :math:`F_V,D_V`. The dirichlet dofs of the test space are removed in the final system, enforcing homogeneous Dirichlet constraints on the test space.
         l :
@@ -294,33 +328,67 @@ def apply_dirichletbc(B: np.ndarray | sparray | AffineObject[Mu, np.ndarray | sp
         f :
             Reduced right-hand side :math:`\tilde{f}` on the free test dofs, i.e. ``f.shape = (sum(V.dofs),)``.
         l :
-            Reduced row vector :math:`\tilde{l}`, i.e. ``l.shape = (sum(U.dofs),)``.
+            Reduced row vector :math:`\tilde{l}`, i.e. ``l.shape = (sum(U.dofs),)``. (Only returned if ``l`` is provided.)
         s0 :
-            Contribution to the output by the Dirichlet boundaries.
+            Contribution to the output by the Dirichlet boundaries. (Only returned if ``l`` is provided.)
     """    
     
+    # B = wrap_affinelinear(B)
+    # f = wrap_affinelinear(f)
+    
+    # f = f.apply2data(       lambda fq: fq[V.dofs]             ) \
+    #     - sum( B.apply2data(lambda Bq: Bq[V.dofs,:][:,bc.dofs]) @ bc for bc in U.bcs )
+    # B = B.apply2data(       lambda Bq: Bq[V.dofs,:][:,U.dofs] )
+    
+    # if l is None:
+    #     return B.compress(), f.compress()
+
+    # l = wrap_affinelinear(l)
+    # s0 = sum([l.apply2data(lambda lq: lq[bc.dofs]) @ bc for bc in U.bcs])
+    # l = l.apply2data(lambda lq: lq[U.dofs])
+
+    # return B.compress(), f.compress(), l.compress(), s0.compress()
+    
+    if not isinstance(U, list): U = [U]
+    if not isinstance(V, list): V = [V]
+
     B = wrap_affinelinear(B)
     f = wrap_affinelinear(f)
-    
-    f = f.apply2data(       lambda fq: fq[V.dofs]             ) \
-        - sum( B.apply2data(lambda Bq: Bq[V.dofs,:][:,bc.dofs]) @ bc for bc in U.bcs )
-    B = B.apply2data(       lambda Bq: Bq[V.dofs,:][:,U.dofs] )
-    
+
+    U_dofs = np.concatenate([Ui.dofs for Ui in U])
+    V_dofs = np.concatenate([Vi.dofs for Vi in V])
+
+    U_offsets = np.cumsum([0] + [Ui.dim for Ui in U[:-1]])
+
+    f = f.apply2data(lambda fq: fq[V_dofs])
+    for Ui, offset in zip(U, U_offsets):
+        for bc in Ui.bcs:
+            f -= B.apply2data(lambda Bq: Bq[V_dofs, :][:, offset + bc.dofs]) @ bc
+
+    B = B.apply2data(lambda Bq: Bq[V_dofs, :][:, U_dofs])
+
     if l is None:
         return B.compress(), f.compress()
+    
+    else:
+        l = wrap_affinelinear(l)
 
-    l = wrap_affinelinear(l)
-    s0 = sum([l.apply2data(lambda lq: lq[bc.dofs]) @ bc for bc in U.bcs])
-    l = l.apply2data(lambda lq: lq[U.dofs])
+        s0 = 0
+        for Ui, offset in zip(U, U_offsets):
+            for bc in Ui.bcs:
+                s0 += l.apply2data(lambda lq: lq[offset + bc.dofs]) @ bc
 
-    return B.compress(), f.compress(), l.compress(), s0.compress()
+        l = l.apply2data(lambda lq: lq[U_dofs])
+
+        return B.compress(), f.compress(), l.compress(), s0.compress()
+    
 
 
 def assemble_system(B: ufl.Form | AffineObject[Mu, ufl.Form],
                     f: ufl.Form | AffineObject[Mu, ufl.Form],
                     U: FEniCSxSpaceWithDirichletBCs, 
                     V: FEniCSxSpaceWithDirichletBCs,
-                    l: ufl.Form | AffineObject[Mu, ufl.Form] | None = None) -> tuple[AffineLinear[Mu,csr_array], AffineLinear[Mu,np.ndarray]]:
+                    l: ufl.Form | AffineObject[Mu, ufl.Form] | None = None) -> tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray]] | tuple[AffineLinear[Mu, np.ndarray | sparray], AffineLinear[Mu, np.ndarray], AffineLinear[Mu, np.ndarray], AffineLinear[Mu, np.ndarray]]:
     r"""Assemble a (parametric) linear system and applying Dirichlet boundary conditions.
     
     Just a wrapper around `utils.assemble_matrix`, `utils.assemble_vector` and `apply_dirichletbc` for convenience.

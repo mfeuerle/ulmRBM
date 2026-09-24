@@ -11,6 +11,7 @@ __all__ = [
     'AffineLinear',
     'AffineFunction',
     'wrap_affinelinear',
+    'unwrap_affinelinear',
     'ScalarComponentList',
     'multiply_theta',
     'affine_kron'
@@ -800,6 +801,38 @@ def wrap_affinelinear(data: Data | AffineLinear[Mu, Data]) -> AffineLinear[Mu, D
         return AffineLinear(data)
     else:
         return AffineLinear([1.0], [data])
+    
+def unwrap_affinelinear(aff: AffineLinear[Mu, Data]) -> Data | AffineLinear[Mu, Data]:
+    r"""
+    Unwrap an :class:`AffineLinear` into a data object if it has only a single constant term.
+    
+    If the input is (convertable to) an :class:`AffineLinear` with a single constant term, it returns the underlying data object.
+    
+    Args:
+        aff :
+            An :class:`AffineLinear`.
+    
+    Returns:
+        The underlying data object if the affine linear has a single constant term, otherwise the input affine linear.
+        
+    Examples
+    --------
+    >>> import numpy as np
+    >>> A = np.array([[1.0, 2.0], [3.0, 4.0]])
+    >>> aff_A = AffineLinear([1.0], [A])
+    >>> unwrap_affinelinear(aff_A)  # Returns the original matrix
+    array([[1., 2.],
+           [3., 4.]])
+    """
+    if isinstance(aff, TrivialParametric):
+        return unwrap(aff)
+    aff = AffineLinear(aff)
+    aff = aff.compress()
+    
+    if len(aff) == 1 and isinstance(aff.theta[0], TrivialParametric) and aff.theta[0].data == 1.0:
+        return aff.data[0]
+    else:
+        raise ValueError("The input AffineLinear does not have a single constant term and cannot be unwrapped.")
     
     
 class ScalarComponentList(Sequence):

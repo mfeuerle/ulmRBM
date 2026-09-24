@@ -51,10 +51,15 @@ def l2(U: FEniCSxSpaceWithDirichletBCs,
         bcs :
             If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
     """
-    
-    u = ufl.TrialFunction(U.space)
-    v = ufl.TestFunction(U.space)
-    product = assemble_matrix(u*v*ufl.dx)
+    if not isinstance(U, FEniCSxSpaceWithDirichletBCs):
+        if bcs: raise ValueError("bcs=True is only valid for FEniCSxSpaceWithDirichletBCs.")
+        space = U
+    else:
+        space = U.space
+           
+    u = ufl.TrialFunction(space)
+    v = ufl.TestFunction(space)
+    product = assemble_matrix(ufl.inner(u, v)*ufl.dx)
     if bcs: product = product[U.dofs,:][:,U.dofs]
     return MatrixInnerProduct(product, solver)
 
@@ -75,11 +80,19 @@ def h10(U: FEniCSxSpaceWithDirichletBCs,
             If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
     """
     
-    if U.space.ufl_element().basix_element.degree < 1:
-        raise ValueError("H1 norm is not defined for elements of degree < 1.")
     
-    u = ufl.TrialFunction(U.space)
-    v = ufl.TestFunction(U.space)
+    
+    if not isinstance(U, FEniCSxSpaceWithDirichletBCs):
+        if bcs: raise ValueError("bcs=True is only valid for FEniCSxSpaceWithDirichletBCs.")
+        space = U
+    else:
+        space = U.space
+        
+    if space.ufl_element().basix_element.degree < 1:
+        raise ValueError("H1 norm is not defined for elements of degree < 1.")
+            
+    u = ufl.TrialFunction(space)
+    v = ufl.TestFunction(space)
     product = assemble_matrix(ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx)
     if bcs: product = product[U.dofs,:][:,U.dofs]
     return MatrixInnerProduct(product, solver)
@@ -101,12 +114,18 @@ def h1(U: FEniCSxSpaceWithDirichletBCs,
             If ``True``, the inner product is restricted to the free dofs ``U.dofs``.
     """
     
-    if U.space.ufl_element().basix_element.degree < 1:
+    if not isinstance(U, FEniCSxSpaceWithDirichletBCs):
+        if bcs: raise ValueError("bcs=True is only valid for FEniCSxSpaceWithDirichletBCs.")
+        space = U
+    else:
+        space = U.space
+        
+    if space.ufl_element().basix_element.degree < 1:
         raise ValueError("H1 norm is not defined for elements of degree < 1.")
-    
-    u = ufl.TrialFunction(U.space)
-    v = ufl.TestFunction(U.space)
-    product = assemble_matrix(u*v*ufl.dx + ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx)
+            
+    u = ufl.TrialFunction(space)
+    v = ufl.TestFunction(space)
+    product = assemble_matrix(ufl.inner(u, v)*ufl.dx + ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx)
     if bcs: product = product[U.dofs,:][:,U.dofs]
     return MatrixInnerProduct(product, solver)
 

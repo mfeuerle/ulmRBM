@@ -24,9 +24,11 @@ Functions
 import numpy as np
 import scipy as sp
 from numbers import Number
-from scipy.sparse import csr_array
+from scipy.sparse import csr_array, block_array
+import warnings
 
 from dolfinx import mesh, fem, plot, geometry
+from dolfinx.fem import petsc
 import ufl
 import basix.ufl
 
@@ -99,11 +101,18 @@ def interpolate_function(space: fem.FunctionSpace, func: np.ndarray | sp.sparse.
     """
     
     if sp.sparse.issparse(func): func = func.toarray()
-    if isinstance(func, Number) or isinstance(func, np.ndarray):
-        func = fem.Constant(space.mesh, np.double(func))
-    if isinstance(func, fem.Constant):
+    
+    if np.isscalar(func):
+        func = np.double(func)
+        if space.dofmap.index_map_bs == 1:
+            return fem.Constant(space.mesh, func)
+        else:
+            return fem.Constant(space.mesh, np.array([func]*space.dofmap.index_map_bs, dtype=np.double))
+        
+    elif isinstance(func, fem.Constant):
         return func
-    if isinstance(func, fem.Function):
+        
+    elif isinstance(func, fem.Function):
         if func.function_space == space:
             return func
         else:
@@ -111,9 +120,30 @@ def interpolate_function(space: fem.FunctionSpace, func: np.ndarray | sp.sparse.
             func_ = fem.Function(space)
             func_.interpolate_nonmatching(func, space.mesh.topology.original_cell_index, ip_data)
             return func_
-            
-    if type(func).__module__.startswith("ufl"):
+        
+    elif type(func).__module__.startswith("ufl"):
         func = fem.Expression(func, space.element.interpolation_points)
+        func_ = fem.Function(space)
+        func_.interpolate(func)
+        return func_
+        
+    else:        
+        try: 
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=r"Couldn't map .* to a float")
+                func = np.asarray(func, dtype=np.double)
+        except Exception: pass
+        if isinstance(func, np.ndarray):
+            if func.ndim == 1 and func.shape[0] == space.dofmap.index_map_bs:
+                return fem.Constant(space.mesh, func)
+            elif func.ndim == 1 and func.shape[0] == space.dofmap.index_map_bs * space.dofmap.index_map.size_global:
+                func_ = fem.Function(space)
+                func_.x.array[:] = func
+                return func_
+            else:
+                raise ValueError(f"Array has wrong shape {func.shape}, expected shape ({space.dofmap.index_map_bs},) or ({space.dofmap.index_map_bs * space.dofmap.index_map.size_global},).")
+    
+    # for everthing else, just try to interpolate    
     func_ = fem.Function(space)
     func_.interpolate(func)
     return func_
@@ -134,9 +164,9 @@ def dirichletbc(space: fem.FunctionSpace, u, dofs: np.ndarray[int]) -> fem.Diric
     Returns:
         A FEniCSx DirichletBC object representing the given boundary condition.
     """
-    if isinstance(u, fem.Function):
-        if u.function_space != space:
-            raise ValueError("Function space of boundary values does not match the function space of the boundary condition.")
+    # if isinstance(u, fem.Function):
+    #     if u.function_space != space:
+    #         raise ValueError("Function space of boundary values does not match the function space of the boundary condition.")
     
     u = interpolate_function(space, u)
     if isinstance(u, fem.Function):
@@ -210,8 +240,8 @@ def plot_pyvista(u: np.ndarray, space: fem.FunctionSpace, name: str, plotter: pv
         grid_sep = grid.separate_cells()
         grid_sep = grid_sep.cell_data_to_point_data(pass_cell_data=True)
         grid_sep.set_active_scalars("u")
-        mesh_to_plot = grid_sep.warp_by_scalar()
-        # mesh_to_plot = grid
+        # mesh_to_plot = grid_sep.warp_by_scalar()
+        mesh_to_plot = grid
 
     # plotter.add_mesh(mesh_to_plot, show_edges=False).scale = scale
     # plotter.show_grid(xtitle='x1', ytitle='x2', ztitle='u(x)')    
@@ -292,7 +322,12 @@ def assemble_matrix(B: ufl.Form | AffineObject[Mu, ufl.Form]) -> csr_array | Aff
         Assembled matrix representation as a (parametric) sparse array.
     """
     
-    assemble = lambda B: csr_array(fem.assemble_matrix(fem.form(B)).to_scipy())
+    def assemble(B):
+        B = petsc.assemble_matrix(fem.form(B), kind='seqaij')
+        B.assemble()
+        return csr_array(B.getValuesCSR()[::-1], shape=B.getSize())
+
+    # assemble = lambda B: csr_array(fem.assemble_matrix(fem.form(B)).to_scipy())
     if isinstance(B, AffineObject):
         return AffineLinear(B.compress().apply2data(assemble))
     else:
@@ -310,7 +345,10 @@ def assemble_vector(l: ufl.Form | AffineObject[Mu, ufl.Form]) -> np.ndarray | Af
         Assembled vector representation as a (parametric) numpy array.
     """
     
-    assemble = lambda l: fem.assemble_vector(fem.form(l)).array
+    def assemble(l):
+        return petsc.assemble_vector(fem.form(l)).array[:]
+    
+    # assemble = lambda l: fem.assemble_vector(fem.form(l)).array
     if isinstance(l, AffineObject):
         return AffineLinear(l.compress().apply2data(assemble))
     else:
@@ -368,6 +406,7 @@ def point_evaluation(func: fem.Function, points: np.ndarray[np.float64], cells: 
         Array of function values at the coordinates in points.
     """
 
+    points = np.asarray(points)
     points = _make_points_3d(func.function_space.mesh, points)
     if cells is None:
         cells = point_cells(func.function_space.mesh, points)
@@ -413,7 +452,7 @@ def projection_matrices(U1: fem.FunctionSpace, U2: fem.FunctionSpace, both: bool
     
     The two function spaces :math:`U_1` and :math:`U_2` can be defined on different meshes (e.g. a coarse and a fine mesh) and / or have different elements (e.g. different polynomial degrees). The projection matrix :math:`P_{12}: U_1 \to U_2` interpolates a discrete function in :math:`U_1` into :math:`U_2`, while :math:`P_{21}: U_2 \to U_1` projects a discrete function in :math:`U_2` into :math:`U_1`, where :math:`P_{21} := = (P_{12}^T P_{12})^{-1} P_{12}^T` is the Moore–Penrose pseudoinverse of :math:`P_{12}`.
     
-    Thus, :math:`P_{21}` only exists, if :math:`P_{12}` has full column rank, i.e. if the functions in :math:`U_1` are linearly independent when interpolated into :math:`U_2` (e.g. if :math:`U_1 \subsetU_2`).
+    Thus, :math:`P_{21}` only exists, if :math:`P_{12}` has full column rank, i.e. if the functions in :math:`U_1` are linearly independent when interpolated into :math:`U_2` (e.g. if :math:`U_1 \subset U_2`).
     
     This function is in particular usefull, if you want to embedd a coarse function space into a fine function space, as it is the case e.g. in context of gemetric multigrid methods. In this case,  :math:`U_1` should be the coarse function space and :math:`U_2` the fine function space.
     

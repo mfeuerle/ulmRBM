@@ -20,6 +20,7 @@ Basic Problems
     free_dofs
     apply_dirichletbc
     assemble_system
+    split_components
     
 Space-Time Problems
 -------------------

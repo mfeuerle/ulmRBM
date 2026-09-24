@@ -24,6 +24,7 @@ Utilities
     
     affine_kron
     wrap_affinelinear
+    unwrap_affinelinear
     multiply_theta
     ScalarComponentList
 """
