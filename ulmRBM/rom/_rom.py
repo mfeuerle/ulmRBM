@@ -466,6 +466,7 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
 
     _B_mixed: AffineLinear[Mu, Matrix] | None = None
     _B_mixed_private: AffineLinear[Mu, Matrix] | None = None
+    _need_assemble_mixed: bool = False  # catch changes in the dual model that require reassembly of the mixed operator
 
     @property
     def _B_mixed(self) -> AffineLinear[Mu, Matrix]:
@@ -483,17 +484,18 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
         old_assemble = self.dual.assemble
         def dual_assemble():
             if self.dual._need_assemble:
-                self._need_assemble = True
+                self._need_assemble_mixed = True
                 old_assemble()
         self.dual.assemble = dual_assemble
 
     def assemble(self: PrimalDualROM[Mu]):
-        ROM.assemble(self)
-        if self._need_assemble or self.dual._need_assemble:
+        if self._need_assemble or self._need_assemble_mixed:
             if self.dual.U_basis.T is not None and self.U_basis is not None:
                 self._B_mixed = self.dual.U_basis.T @ self.fom.B @ self.U_basis
             else:
                 self._B_mixed = None
+            self._need_assemble_mixed = False
+        ROM.assemble(self)
 
     def output(self: PrimalDualROM[Mu], mu: Mu, u: Vector | None = None, z: Vector | None = None) -> Vector:
         if self.l is None:
