@@ -683,9 +683,6 @@ def primaldual_greedy_rbm(
             err = np.array([rom.error_bound(mu, u_N_mu) for mu, u_N_mu in zip(mu_train, u_rom)])
             err_dual = np.array([rom.dual.error_bound(mu, z_N_mu) for mu, z_N_mu in zip(mu_train, u_rom_dual)])
             err_out = np.array([rom.output_error_bound(mu, u_N_mu, z_N_mu) for mu, u_N_mu,z_N_mu in zip(mu_train, u_rom, u_rom_dual)])
-            # rom._residual_evaluator._initialize_output() # Only primal output
-            # rom._residual_evaluator._output = True
-            # err_out = np.array([ROM.output_error_bound(rom, mu, u_N_mu) for mu, u_N_mu,z_N_mu in zip(mu_train, u_rom, u_rom_dual)])
             
         idx = _max_err_idx(err)
         idx_dual = _max_err_idx(err_dual)
@@ -735,4 +732,4 @@ def primaldual_greedy_rbm(
         err_decay_output.append(np.nan)
     
     rom.assemble()
-    return flag, np.array(err_decay_output), np.array(mu_idx_output, dtype=int)
+    return flag, [np.array(err_decay_output), np.array(err_decay), np.array(err_decay_dual)], np.array(mu_idx_output, dtype=int)
