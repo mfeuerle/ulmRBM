@@ -512,15 +512,17 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
         self.dual._fom_stability_estimator  = self._fom_stability_estimator
         self.dual._fom_continuity_estimator = self._fom_continuity_estimator
         
-        old_mark_for_assembly = self.dual._mark_for_assembly
+        old_mark_for_assembly = self._mark_for_assembly
         def patched_mark_for_assembly(U: bool = False, V: bool = False):
             old_mark_for_assembly(U, V)
             if U: self._need_assemble_B_mixed = True
-        self.dual._mark_for_assembly = patched_mark_for_assembly
+        self._mark_for_assembly = patched_mark_for_assembly
         
-    def _mark_for_assembly(self, U: bool = False, V: bool = False):
-        ROM._mark_for_assembly(self, U, V)
-        if U: self._need_assemble_B_mixed = True
+        dual_old_mark_for_assembly = self.dual._mark_for_assembly
+        def dual_patched_mark_for_assembly(U: bool = False, V: bool = False):
+            dual_old_mark_for_assembly(U, V)
+            if U: self._need_assemble_B_mixed = True
+        self.dual._mark_for_assembly = dual_patched_mark_for_assembly
     
     def _assemble_B_mixed(self):
         if self._need_assemble_B_mixed:
