@@ -83,25 +83,16 @@ class ROM(FOM[Mu]):
     def B(self) -> AffineLinear[Mu, Matrix]:
         self._assemble_B()
         return self._B
-    @B.setter
-    def B(self, value: AffineLinear[Mu, Matrix]):
-        self._B = value
         
     @property
     def f(self) -> AffineLinear[Mu, Vector]:
         self._assemble_f()
         return self._f
-    @f.setter
-    def f(self, value: AffineLinear[Mu, Vector]):
-        self._f = value
         
     @property
     def l(self) -> AffineLinear[Mu, Matrix] | None:
         self._assemble_l()
         return self._l
-    @l.setter
-    def l(self, value: AffineLinear[Mu, Matrix] | None):
-        self._l = value
 
     @property
     def U_basis(self) -> Vector:
@@ -515,10 +506,6 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
     def _B_mixed(self) -> AffineLinear[Mu, Matrix]:
         self._assemble_B_mixed()
         return self._B_mixed_private
-    
-    @_B_mixed.setter
-    def _B_mixed(self, value: AffineLinear[Mu, Matrix]):
-        self._B_mixed_private = value
     
     def __init__(self: PrimalDualROM[Mu], dual: ROM[Mu]):
         self.dual = dual
