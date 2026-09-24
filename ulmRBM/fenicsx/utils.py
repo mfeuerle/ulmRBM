@@ -134,6 +134,8 @@ def interpolate_function(space: fem.FunctionSpace, func: np.ndarray | sp.sparse.
                 func = np.asarray(func, dtype=np.double)
         except Exception: pass
         if isinstance(func, np.ndarray):
+            if func.shape == space.value_shape:
+                return fem.Constant(space.mesh, func)
             if func.ndim == 1 and func.shape[0] == space.dofmap.index_map_bs:
                 return fem.Constant(space.mesh, func)
             elif func.ndim == 1 and func.shape[0] == space.dofmap.index_map_bs * space.dofmap.index_map.size_global:
