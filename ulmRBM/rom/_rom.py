@@ -523,9 +523,9 @@ class _PrimalDualROM_Mixin(PrimalDualModel[Mu]):
         if U: self._need_assemble_B_mixed = True
     
     def _assemble_B_mixed(self):
-        if self._need_assemble_mixed:
-            self._need_assemble_mixed = False
-            if self.dual.U_basis.T is not None and self.U_basis is not None:
+        if self._need_assemble_B_mixed:
+            self._need_assemble_B_mixed = False
+            if self.dual.U_basis is not None and self.U_basis is not None:
                 self._B_mixed_private = self.dual.U_basis.T @ self.fom.B @ self.U_basis
             else:
                 self._B_mixed_private = None
