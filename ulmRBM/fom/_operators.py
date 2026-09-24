@@ -305,7 +305,7 @@ class ParametricOperator(Generic[Mu]):
         val, vec = eigsh(**eigsh_opts)
         if self._take_square_root_eigenvalues:
             val = np.sqrt(val)
-        return val, vec
+        return val[0], vec[:,0]
 
     def _continuity_sparse(self, A, M, Ainv, Minv):
         eigsh_opts = self._eigsh_options_continuity.copy()
@@ -317,7 +317,7 @@ class ParametricOperator(Generic[Mu]):
         val, vec = eigsh(**eigsh_opts)
         if self._take_square_root_eigenvalues:
             val = np.sqrt(val)
-        return val, vec
+        return val[0], vec[:,0]
     
     
     def _stability_estimate(self, A, M, Ainv, Minv):
