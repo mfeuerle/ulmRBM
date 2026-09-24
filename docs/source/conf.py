@@ -82,7 +82,16 @@ html_theme_options ={
 # html_static_path = ['_static']
 
 
-latex_elements = {'preamble': r'\usepackage{amsmath}\n\usepackage{amssymb}\n'}
+latex_elements = {
+    "preamble": r"""
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[normalem]{ulem}
+\usepackage{hyperref}
+
+\newcommand{\R}{\mathbb{R}}
+"""
+}
 
 
 autodoc_default_options = {

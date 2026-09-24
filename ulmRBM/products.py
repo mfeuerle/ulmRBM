@@ -568,7 +568,7 @@ def orthonormalize(basis: Vector, ip: InnerProduct[Mu] | Matrix) -> Tuple[Vector
             
     Returns:
         - Orthonormalized basis matrix :math:`(n, N)`.
-        - Transformation matrix :math:`(N, N)` such that :math:`\text{basis}_\text{orth} = \text{basis} \@ Q`.
+        - Transformation matrix :math:`(N, N)` such that :math:`\text{basis}_\text{orth} = \text{basis} @ Q`.
     """
 
     if not isinstance(ip, InnerProduct):
