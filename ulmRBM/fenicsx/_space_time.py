@@ -349,7 +349,8 @@ class SpaceTimeFEniCSxSpaceWithDirichletBCs:
 def apply_dirichletbc_space_time(B: list[dict[SpaceTimeKey, AffineLinear[Mu, Matrix]]],
                     f: AffineLinear[Mu, Vector],
                     U: SpaceTimeFEniCSxSpaceWithDirichletBCs, 
-                    V: SpaceTimeFEniCSxSpaceWithDirichletBCs) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector]]:
+                    V: SpaceTimeFEniCSxSpaceWithDirichletBCs,
+                    l: AffineLinear[Mu, Vector] | None = None) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector]]:
     r"""Apply Space-Time Dirichlet boundary condtions to the right-hand side.
     
     Args:
@@ -361,6 +362,8 @@ def apply_dirichletbc_space_time(B: list[dict[SpaceTimeKey, AffineLinear[Mu, Mat
             Function space containing the Dirichlet boundary conditions.
         V:
             Function space for the solution.
+        l :
+            1D vector for computing the output :math:`s = lu`, i.e. ``l.shape = (U.dim,)``.
             
     Returns
     -------
@@ -368,6 +371,10 @@ def apply_dirichletbc_space_time(B: list[dict[SpaceTimeKey, AffineLinear[Mu, Mat
         System matrix with test and trial Dirichlet boundary dofs removed.
     f:
         Right-hand side vector with test Dirichlet boundary dofs removed and trial Dirichlet boundary conditions applied.
+    l :
+        Reduced row vector :math:`\tilde{l}`, i.e. ``l.shape = (sum(U.dofs),)``. (Only returned if ``l`` is provided.)
+    s0 :
+        Contribution to the output by the Dirichlet boundaries. (Only returned if ``l`` is provided.)
     """
     B = [{KEY: wrap_affinelinear(Bi[KEY]) for KEY in SpaceTimeKey} for Bi in B]
     f = wrap_affinelinear(f)
@@ -383,5 +390,17 @@ def apply_dirichletbc_space_time(B: list[dict[SpaceTimeKey, AffineLinear[Mu, Mat
     B_FF = sum([affine_kron(Bi[SPACE], Bi[TIME]) for Bi in B_FF])
     B_FD_bcs = sum([apply_bc(bc) for bc in U.bcs])
     f_F  = f.apply2data(lambda fq: fq[V.full_dofs]) - B_FD_bcs
-    
-    return B_FF.compress(), f_F.compress()
+
+    if l is None:
+        return B_FF.compress(), f_F.compress()
+
+    else:
+        l = wrap_affinelinear(l)
+        
+        s0 = 0
+        for bc in U.bcs:
+            s0 += l.apply2data(lambda lq: lq[bc.dofs]) @ bc
+
+        l = l.apply2data(lambda lq: lq[U.full_dofs])
+
+        return B_FF.compress(), f_F.compress(), l.compress(), s0.compress()

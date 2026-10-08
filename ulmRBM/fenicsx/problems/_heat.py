@@ -8,7 +8,7 @@ from dolfinx import mesh, fem
 import ufl
 
 from ulmRBM.core import Mu, unwrap, Matrix, Vector
-from ulmRBM.affine import AffineObject, AffineLinear, AffineFunction, wrap_affinelinear
+from ulmRBM.affine import AffineObject, AffineLinear, AffineFunction, wrap_affinelinear, affine_kron
 from ulmRBM.fenicsx import utils, norms, FEniCSxSpaceWithDirichletBCs, SpaceTimeKey, SpaceTimeAffineDirichletBC, SpaceTimeFEniCSxSpaceWithDirichletBCs, interpolate_space_time, apply_dirichletbc_space_time, AffineDirichletBC
 from ulmRBM.fenicsx.problems import weak_problem
 from ulmRBM.fom import crank_nicolson, explicit_euler, implicit_euler
@@ -28,7 +28,8 @@ def heat_equation(msh: dict[SpaceTimeKey, mesh.Mesh],
                 f: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 1,
                 g: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 0,
                 u0: float | AffineObject = 0,
-                dbdry: Callable[[np.ndarray[float]], np.ndarray[bool]] = None) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], SpaceTimeFEniCSxSpaceWithDirichletBCs, SpaceTimeFEniCSxSpaceWithDirichletBCs]:
+                dbdry: Callable[[np.ndarray[float]], np.ndarray[bool]] = None,
+                output_mode: int=0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], SpaceTimeFEniCSxSpaceWithDirichletBCs, SpaceTimeFEniCSxSpaceWithDirichletBCs]:
     r"""Parametric heat equation.
     
     For some time interval :math:`I` and a spatial domain :math:`\Omega \subset\mathbb{R}^d`, consider the parametric heat equation
@@ -55,6 +56,20 @@ def heat_equation(msh: dict[SpaceTimeKey, mesh.Mesh],
     .. math::
         b_\mu(u,v) := (\partial_t u, v)_{L^2(I\times\Omega)} - (\uline{A}_\mu \nabla_x u, \nabla_x v)_{L^2(I\times\Omega)} + (\uline{b}_\mu \cdot \nabla_x u, v)_{L^2(I\times\Omega)} + (\uline{c}_\mu u, v)_{L^2(I\times\Omega)},\\
         f_\mu(v) := (f_\mu, v)_{L^2(I\times\Omega)}.
+
+    The outputs are defined for the terminal time point. For ``outputmode = 1`` the output is
+    defined as the flux over the domain boundary, i.e.
+    
+    .. math::
+        s_\mu(u_\mu(T,x)) = \int_{\partial\Omega} -A_\mu(x) \nabla_x u_\mu(T,x) n \, \text{d} x
+
+    For ``outputmode = 2`` the output is defined as the difference in the solution between 
+    the coordinates [0.25, 0.25, 0.25] and [0.75, 0.75, 0.75], i.e.
+
+    .. math::
+        s_\mu(u_\mu(T,x)) = u_\mu(T,[0.25, 0.25, 0.25]) - u_\mu(T,[0.75, 0.75, 0.75])
+
+    For :math:`d<3` the additional dimensions in the points are treated as zero.
     
     Args:
         msh:
@@ -69,6 +84,8 @@ def heat_equation(msh: dict[SpaceTimeKey, mesh.Mesh],
             (Parametric) Initial condition. A scalar or an (affine) function with signature ``u0(x)`` or ``u0(mu)(x)``.
         dbdry:
             Function that takes as input points on the spatial domain boundary and returns a boolean array indicating which of these points are on the spatial part of the Dirichlet boundary, on which the Dirichlet boundary condition ``g`` is applied. If None, the Dirichlet boundary condition will be applied on the entire spatial boundary :math:`\partial\Omega`.
+        output_mode:
+                Choose output (at terminal time). 0 for no output. 1 for flux over boundary. 2 for temperature difference beteen coordinates [0.25, 0.25, 0.25] and [0.75, 0.75, 0.75]
             
     Returns
     -------
@@ -80,12 +97,16 @@ def heat_equation(msh: dict[SpaceTimeKey, mesh.Mesh],
         Function space :math:`U := H^1_{0,}(I;L^2(\Omega)) \cap L^2(I;H^1_0(\Omega))` containing the initial condition :math:`u0_\mu` and Dirichlet boundary condition :math:`g_\mu`.
     V :
         Function space :math:`V := L^2(I;H^1_0(\Omega))`.
+    l :
+        Output functional for :py:attr:`ulmRBM.fom.FOM.l`.
+    s0 :
+        Contribution of the Dirichlet boundaries to the output.
     """
     
     gdim = {KEY: msh[KEY].geometry.dim for KEY in SpaceTimeKey}
     tdim = {KEY: msh[KEY].topology.dim for KEY in SpaceTimeKey}
     
-    for KEY in SpaceTimeKey: 
+    for KEY in SpaceTimeKey:
         msh[KEY].topology.create_connectivity(tdim[KEY]-1, tdim[KEY])
         
     ########################################
@@ -136,7 +157,8 @@ def heat_equation(msh: dict[SpaceTimeKey, mesh.Mesh],
     
     dbcs_U = [SpaceTimeAffineDirichletBC(KEY, U, g, get_entities(KEY, dbdry)) for KEY, g, dbdry in dbcs_U]
     dbcs_V = [SpaceTimeAffineDirichletBC(KEY, V, g, get_entities(KEY, dbdry)) for KEY, g, dbdry in dbcs_V]
-    
+
+    U_ = U
     U = SpaceTimeFEniCSxSpaceWithDirichletBCs(U, dbcs_U)
     V = SpaceTimeFEniCSxSpaceWithDirichletBCs(V, dbcs_V, warn=False)
     
@@ -161,16 +183,56 @@ def heat_equation(msh: dict[SpaceTimeKey, mesh.Mesh],
     F = {KEY: utils.assemble_matrix(F[KEY]) for KEY in SpaceTimeKey}
     f  = (F[SPACE] @ f @ F[TIME].T).apply2data(lambda fq: fq.reshape(-1,))
     
-    B, f = apply_dirichletbc_space_time(B, f, U, V)
+    if output_mode==0: # No output
+        B, f = apply_dirichletbc_space_time(B, f, U, V)
+        return B, f, U, V
     
-    return B, f, U, V
+    ########################################
+    # OUTPUT COMPUTATION
+    ########################################
+
+    if output_mode == 1: # Flux over Dirichlet boundary
+        A_ = A_.apply2data(lambda Aq: utils.interpolate_function(fem.functionspace(msh[SPACE], ("DG", 0, (gdim[SPACE], gdim[SPACE]))), Aq))
+        A_.apply2data(lambda Aq: ufl.inner(Aq * ufl.grad(u[SPACE]), ufl.grad(v[SPACE])) * ufl.dx)
+        all_bdry = [mesh.locate_entities_boundary(msh[SPACE], tdim[SPACE]-1, lambda x: np.full(x.shape[1], True, dtype=bool))]
+        ds = utils.create_measure("ds", msh[SPACE], tdim[SPACE]-1, all_bdry)
+        l_space = A_.apply2data(lambda Aq: ufl.dot(Aq * ufl.grad(u[SPACE]), ufl.FacetNormal(msh[SPACE])) * ds)
+        l_space = utils.assemble_vector(l_space)
+
+        t_end = np.max(msh[TIME].geometry.x,axis=0)
+        l_time = utils.point_functional(U_[TIME], np.array([t_end])).reshape(-1)
+
+        l = affine_kron(l_space, l_time)
+
+    elif output_mode == 2: # Temperature difference between coordinates [0.25, 0.25] and [0.75, 0.75]
+        if gdim[SPACE]==3:
+            poi = np.array([[0.25, 0.25, 0.25],[0.75, 0.75, 0.75]])
+        elif gdim[SPACE]==2:
+            poi = np.array([[0.25, 0.25, 0],[0.75, 0.75, 0]])
+        else:
+            poi = np.array([[0.25, 0, 0],[0.75, 0, 0]])
+        l_vecs = utils.point_functional(U_[SPACE], poi)
+        l_space = AffineLinear([1], [l_vecs[0,:]-l_vecs[1,:]])
+
+        t_end = np.max(msh[TIME].geometry.x,axis=0)
+        l_time = utils.point_functional(U_[TIME], np.array([t_end])).reshape(-1)
+
+        l = affine_kron(l_space, l_time)
+
+    else:
+        raise ValueError('Unknown output case for heat equation.')
+
+    B, f, l, s0 = apply_dirichletbc_space_time(B, f, U, V, l)
+    
+    return B, f, U, V, l, s0
 
 
 def simple_heat(K: int = 10,
                 nx: int | list[int] = 10,
                 f: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 1,
                 g: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 0,
-                u0: float | AffineObject = 0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], SpaceTimeFEniCSxSpaceWithDirichletBCs, SpaceTimeFEniCSxSpaceWithDirichletBCs]:
+                u0: float | AffineObject = 0,
+                output_mode: int = 0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], SpaceTimeFEniCSxSpaceWithDirichletBCs, SpaceTimeFEniCSxSpaceWithDirichletBCs]:
     r"""Simple parametric heat problem operators.
     
     See `heat_equation`, with :math:`I=(0,1)`, :math:`\Omega=(0,1)^d`, :math:`A_\mu(x) = -\mu \Delta_x` and :math:`\uline{b}_\mu(x) = 0`, :math:`\uline{c}_\mu(x) = 0`
@@ -195,8 +257,7 @@ def simple_heat(K: int = 10,
     b = AffineObject([0.0], [np.ones(gdim[SPACE])])
     c = AffineObject([0.0], [1.0])
 
-    return heat_equation(msh, (A, b, c), f, g, u0)
-
+    return heat_equation(msh, (A, b, c), f, g, u0, output_mode=output_mode)
 
 
 def heat_equation_timestepping(msh: mesh.Mesh,
