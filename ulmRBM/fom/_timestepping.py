@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 from collections.abc import Callable
-from typing import Generic
+from typing import Generic, Optional
 from dataclasses import dataclass
 
 import numpy as np
@@ -38,6 +38,8 @@ class TimeSteppingSolution(Generic[Mu]):
     r"""Time points at which the solution is computed."""
     u: np.ndarray[float]
     r"""Solution values at the time points in `t`, i.e. ``u[:,k]`` is the solution at time ``t[k]``."""
+    s: Optional[np.ndarray[float]] = None
+    r"""Output values at the time points in `t`, i.e. ``s(u[:,k])=lu[:,k]``."""
     
     def __iter__(self) -> zip[float, np.ndarray[float]]:
         r"""Iterate over the time points and corresponding solution values."""
@@ -84,6 +86,8 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
     """Dimension of the space :math:`W`."""
     K: int
     """Number of time intervals, i.e. ``K+1`` time points."""
+    l: AffineLinear[Mu, Vector]
+    """Affine decomposition of the output(s) of interest functional :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`. Might be ``None``, if no output of interest is given."""
     
     
     @property
@@ -101,7 +105,8 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
                  b: AffineLinear[Mu, Vector],
                  u0: AffineLinear[Mu, Vector],
                  t: np.ndarray[float],
-                 solver = DirectSolver(factorize=True)):
+                 solver = DirectSolver(factorize=True),
+                 l: AffineLinear[Mu, Vector] | None = None):
         r"""
         Args:
             LI:
@@ -114,6 +119,10 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
                 Initial value at ``t_0``.
             t:
                 Time points ``t_0, ..., t_K`` at which the solution is approximated.
+            solver:
+                Solver for the linear system per time step. Defaults to `DirectSolver`.
+            l:
+                Affine decomposition of the output(s) of interest functional :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`. Might be ``None``, if no output of interest is given.
         """
         assert LI.shape == LE.shape
         assert LI.V is LE.V is LE.U is LI.U
@@ -126,6 +135,7 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
         self.t = t
         self.W = LI.U
         self._solver = wrap_solver(solver)
+        self.l = l
         
     def solve(self, mu: Mu) -> TimeSteppingSolution[Mu]:
         r"""Solve the time-stepping problem for a given parameter.
@@ -148,6 +158,28 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
             u[:,k+1] = self._solver(LI, LE @ u[:,k] + b[:,k], u[:,k])
             
         return TimeSteppingSolution(self.t, u)
+
+    def output(self, mu: Mu, u: TimeSteppingSolution | None = None):
+        r"""
+        Compute the output of interest :math:`s(\mu) = l(\mu) u(\mu)` at the given parameter value.
+        
+        Args:
+            mu:
+                Parameter for which to solve the time-stepping problem.
+            u:
+                Optional time-stepping solution. If ``None``, the state is computed via :meth:`solve`.
+        
+        Returns:
+            Output of interest :math:`s(\mu) \in \mathbb{R}^p`.
+        """
+        if self.l is None:
+            raise ValueError("No output functional defined for this model.")
+        if u is None: u = self.solve(mu)
+        u = u.u
+        s = np.zeros_like(self.t)
+        for k in range(self.K+1):
+            s[k] = self.l(mu) @ u[:,k]
+        return TimeSteppingSolution(self.t, u, s)
     
 
 def explicit_euler(A: Matrix | AffineLinear[Mu, Matrix],
