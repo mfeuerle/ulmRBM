@@ -294,6 +294,20 @@ def heat_equation_timestepping(msh: mesh.Mesh,
     .. math::
         a_\mu(u, w) := - (\uline{A}_\mu \nabla_x u, \nabla_x w)_{L^2(\Omega)} + (\uline{b}_\mu \cdot \nabla_x u, w)_{L^2(\Omega)} + (\uline{c}_\mu u, w)_{L^2(\Omega)}.
     
+    For ``outputmode = 1`` the output is
+    defined as the flux over the domain boundary, i.e.
+    
+    .. math::
+        s_\mu(u_\mu(T,x)) = \int_{\partial\Omega} -A_\mu(x) \nabla_x u_\mu(T,x) n \, \text{d} x
+
+    For ``outputmode = 2`` the output is defined as the difference in the solution between 
+    the coordinates [0.25, 0.25, 0.25] and [0.75, 0.75, 0.75], i.e.
+
+    .. math::
+        s_\mu(u_\mu(T,x)) = u_\mu(T,[0.25, 0.25, 0.25]) - u_\mu(T,[0.75, 0.75, 0.75])
+
+    For :math:`d<3` the additional dimensions in the points are treated as zero.
+        
     Returns
     -------
     A :
@@ -393,8 +407,14 @@ def heat_equation_timestepping(msh: mesh.Mesh,
         l = A_.apply2data(lambda Aq: ufl.dot(Aq * ufl.grad(u), ufl.FacetNormal(msh)) * ds)
         l = utils.assemble_vector(l)
 
-    elif output_mode == 2: # Temperature difference between coordinates [0.25, 0.25] and [0.75, 0.75] 
-        l_vecs = utils.point_functional(W.space, np.array([[0.25, 0.25, 0],[0.75, 0.75, 0]]))
+    elif output_mode == 2: # Temperature difference between coordinates [0.25, 0.25] and [0.75, 0.75]
+        if gdim==3:
+            poi = np.array([[0.25, 0.25, 0.25],[0.75, 0.75, 0.75]])
+        elif gdim==2:
+            poi = np.array([[0.25, 0.25, 0],[0.75, 0.75, 0]])
+        else:
+            poi = np.array([[0.25, 0, 0],[0.75, 0, 0]]) 
+        l_vecs = utils.point_functional(W.space, poi)
         l = l_vecs[0,:]-l_vecs[1,:]
     else:
         raise ValueError('Unknown output case for timestepping heat')
