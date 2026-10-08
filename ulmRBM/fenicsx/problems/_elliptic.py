@@ -209,7 +209,7 @@ def weak_problem(msh: mesh.Mesh,
 def simple_elliptic(n: int | list[int] = 10, 
                     f: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 1, 
                     g: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], FEniCSxSpaceWithDirichletBCs, FEniCSxSpaceWithDirichletBCs]:
-    r"""Parametric elliptic problem on the unit square.
+    r"""Parametric elliptic problem on the unit interval/square/cube.
 
     The model uses `weak_problem` with
 
