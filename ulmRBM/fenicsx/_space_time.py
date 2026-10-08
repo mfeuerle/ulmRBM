@@ -350,7 +350,7 @@ def apply_dirichletbc_space_time(B: list[dict[SpaceTimeKey, AffineLinear[Mu, Mat
                     f: AffineLinear[Mu, Vector],
                     U: SpaceTimeFEniCSxSpaceWithDirichletBCs, 
                     V: SpaceTimeFEniCSxSpaceWithDirichletBCs,
-                    l: AffineLinear[Mu, Vector] | None = None) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector]]:
+                    l: AffineLinear[Mu, Vector] | None = None) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], AffineLinear[Mu,Vector], AffineLinear[Mu,Number]]:
     r"""Apply Space-Time Dirichlet boundary condtions to the right-hand side.
     
     Args:

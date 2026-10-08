@@ -7,7 +7,7 @@ from mpi4py import MPI
 from dolfinx import mesh, fem
 import ufl
 
-from ulmRBM.core import Mu, unwrap, Matrix, Vector
+from ulmRBM.core import Mu, unwrap, Matrix, Vector, Number
 from ulmRBM.affine import AffineObject, AffineLinear, AffineFunction, wrap_affinelinear, affine_kron
 from ulmRBM.fenicsx import utils, norms, FEniCSxSpaceWithDirichletBCs, SpaceTimeKey, SpaceTimeAffineDirichletBC, SpaceTimeFEniCSxSpaceWithDirichletBCs, interpolate_space_time, apply_dirichletbc_space_time, AffineDirichletBC
 from ulmRBM.fenicsx.problems import weak_problem
@@ -29,7 +29,7 @@ def heat_equation(msh: dict[SpaceTimeKey, mesh.Mesh],
                 g: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 0,
                 u0: float | AffineObject = 0,
                 dbdry: Callable[[np.ndarray[float]], np.ndarray[bool]] = None,
-                output_mode: int=0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], SpaceTimeFEniCSxSpaceWithDirichletBCs, SpaceTimeFEniCSxSpaceWithDirichletBCs]:
+                output_mode: int=0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], SpaceTimeFEniCSxSpaceWithDirichletBCs, SpaceTimeFEniCSxSpaceWithDirichletBCs, AffineLinear[Mu,Vector], AffineLinear[Mu,Number]]:
     r"""Parametric heat equation.
     
     For some time interval :math:`I` and a spatial domain :math:`\Omega \subset\mathbb{R}^d`, consider the parametric heat equation
@@ -232,7 +232,7 @@ def simple_heat(K: int = 10,
                 f: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 1,
                 g: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu] = 0,
                 u0: float | AffineObject = 0,
-                output_mode: int = 0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], SpaceTimeFEniCSxSpaceWithDirichletBCs, SpaceTimeFEniCSxSpaceWithDirichletBCs]:
+                output_mode: int = 0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Vector], SpaceTimeFEniCSxSpaceWithDirichletBCs, SpaceTimeFEniCSxSpaceWithDirichletBCs, AffineLinear[Mu,Vector], AffineLinear[Mu,Number]]:
     r"""Simple parametric heat problem operators.
     
     See `heat_equation`, with :math:`I=(0,1)`, :math:`\Omega=(0,1)^d`, :math:`A_\mu(x) = -\mu \Delta_x` and :math:`\uline{b}_\mu(x) = 0`, :math:`\uline{c}_\mu(x) = 0`
@@ -263,7 +263,8 @@ def simple_heat(K: int = 10,
 def heat_equation_timestepping(msh: mesh.Mesh,
                       A: list[AffineObject, AffineObject, AffineObject],
                       f: float | Callable[[float, np.ndarray], float] | AffineFunction[Mu],
-                      u0: float | AffineObject) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Matrix], AffineFunction[Mu], AffineLinear[Mu,Vector], FEniCSxSpaceWithDirichletBCs]:
+                      u0: float | AffineObject,
+                      output_mode: int = 0) -> tuple[AffineLinear[Mu,Matrix], AffineLinear[Mu,Matrix], AffineFunction[Mu], AffineLinear[Mu,Vector], FEniCSxSpaceWithDirichletBCs, AffineLinear[Mu,Vector], AffineLinear[Mu,Number]]:
     r"""Semi-Variational formulation for the parametric heat equation.
     
     For a time interval :math:`I` and a spatial domain :math:`\Omega \subset\mathbb{R}^d`, consider the parametric heat equation
@@ -377,14 +378,44 @@ def heat_equation_timestepping(msh: mesh.Mesh,
     u0 = u0.apply2data(lambda u0q: utils.interpolate_function(W.space, u0q))
     u0 = u0.apply2data(lambda u0q: u0q.value * np.ones(sum(W.dofs)) if isinstance(u0q, fem.Constant) else u0q.x.array[W.dofs])
         
-    return A, M, f, u0, W
+    if output_mode==0: # No output
+        return A, M, f, u0, W
+    
+    # Output computation
+
+    if output_mode == 1: # Flux over Dirichlet boundary
+        u = ufl.TrialFunction(W.space)
+        A_ = A_.apply2data(lambda Aq: utils.interpolate_function(fem.functionspace(msh, ("DG", 0, (gdim, gdim))), Aq))
+        A_.apply2data(lambda Aq: ufl.inner(Aq * ufl.grad(u), ufl.grad(u)) * ufl.dx)
+        
+        all_bdry = [mesh.locate_entities_boundary(msh, tdim-1, lambda x: np.full(x.shape[1], True, dtype=bool))]
+        ds = utils.create_measure("ds", msh, tdim-1, all_bdry)
+        l = A_.apply2data(lambda Aq: ufl.dot(Aq * ufl.grad(u), ufl.FacetNormal(msh)) * ds)
+        l = utils.assemble_vector(l)
+
+    elif output_mode == 2: # Temperature difference between coordinates [0.25, 0.25] and [0.75, 0.75] 
+        l_vecs = utils.point_functional(W.space, np.array([[0.25, 0.25, 0],[0.75, 0.75, 0]]))
+        l = l_vecs[0,:]-l_vecs[1,:]
+    else:
+        raise ValueError('Unknown output case for timestepping heat')
+
+    l = wrap_affinelinear(l)
+    
+    s0 = 0
+    for bc in W.bcs:
+        s0 += l.apply2data(lambda lq: lq[bc.dofs]) @ bc
+
+    l = l.apply2data(lambda lq: lq[W.dofs])
+    
+    return A, M, f, u0, W, l, s0
 
 
 def simple_heat_timestepping(K: int = 10,
                              nx:list[int]=[10],
                              f: float | Callable[[float], any] | AffineFunction[Mu] = 1,
                              u0: float | AffineObject = 0,
-                             method: str = 'CN') -> tuple[AffineLinear[Mu, Matrix], AffineLinear[Mu, Matrix], AffineLinear[Mu, Vector], AffineLinear[Mu, Vector], np.ndarray[float], FEniCSxSpaceWithDirichletBCs]:
+                             method: str = 'CN',
+                             output_mode: int = 0) -> tuple[AffineLinear[Mu, Matrix], AffineLinear[Mu, Matrix], AffineLinear[Mu, Vector], AffineLinear[Mu, Vector], np.ndarray[float], FEniCSxSpaceWithDirichletBCs]:
     r"""Simple parametric heat problem operators for time-stepping.
     
     See `heat_equation_timestepping`, with :math:`A_\mu(x) = -\mu \Delta_x`, :math:`I = (0,1)` and :math:`\Omega = (0,1)^d`.
@@ -443,8 +474,14 @@ def simple_heat_timestepping(K: int = 10,
     b = AffineFunction([0.0], [np.ones(gdim)])
     c = AffineFunction([0.0], [1.0])
     
-    A, M, f, u0, W = heat_equation_timestepping(msh, (A,b,c), f, u0)
+    if output_mode == 0:
+        A, M, f, u0, W = heat_equation_timestepping(msh, (A,b,c), f, u0, output_mode=output_mode)
+    else:
+        A, M, f, u0, W, l, s0 = heat_equation_timestepping(msh, (A,b,c), f, u0, output_mode=output_mode)
     
     LI, LE, b, t = time_stepping_method(A, M, f, [0,1], K)
-    
-    return LI, LE, b, u0, t, W
+
+    if output_mode == 0:
+        return LI, LE, b, u0, t, W
+    else:
+        return LI, LE, b, u0, t, W, l, s0
