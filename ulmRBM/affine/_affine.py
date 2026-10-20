@@ -740,7 +740,7 @@ def affine_kron(A: Matrix | AffineLinear[Mu, Matrix], B: Matrix | AffineLinear[M
     from ulmRBM.core import KRON_AVAILABLE
     
     if format is None:
-        if KRON_AVAILABLE: 
+        if KRON_AVAILABLE and A.shape.__len__()==2 and B.shape.__len__()==2: 
             format = 'implicit'
         elif all([sp.sparse.issparse(Aq) for Aq in A.data]) or all([sp.sparse.issparse(Bq) for Bq in B.data]):
             format = 'sparse'
