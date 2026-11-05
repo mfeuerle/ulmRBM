@@ -11,6 +11,8 @@ __all__ = [
     'explicit_euler',
     'implicit_euler',
     'crank_nicolson',
+    'DualStationaryTimeSteppingGalerkinFOM',
+    'PrimalDualStationaryTimeSteppingGalerkinFOM',
 ]
 
 from collections.abc import Callable
@@ -176,11 +178,142 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
             raise ValueError("No output functional defined for this model.")
         if u is None: u = self.solve(mu)
         u = u.u
-        s = np.zeros_like(self.t)
-        for k in range(self.K+1):
-            s[k] = self.l(mu) @ u[:,k]
-        return TimeSteppingSolution(self.t, u, s)
+        # s = np.zeros_like(self.t)
+        # for k in range(self.K+1):
+        #     s[k] = self.l(mu) @ u[:,k]
+        # return TimeSteppingSolution(self.t, u, s)
+        return self.l(mu) @ u[:,-1]
+
+class DualStationaryTimeSteppingGalerkinFOM():
+    r"""Model for dual time-stepping problems with a Galerkin operator and stationary operators.
+        
+    For details refer to `StationaryTimeSteppingGalerkinFOM`.
+    """
     
+    LI: ParametricGalerkinOperator[Mu, Matrix]
+    r"""Implicit part of the time-stepping scheme, i.e. the operator :math:`\mathcal{L}^I(\mu):W\to W'` applied to the solution at the next time step."""
+    LE: ParametricGalerkinOperator[Mu, Matrix]
+    r"""Explicit part of the time-stepping scheme, i.e. the operator :math:`\mathcal{L}^E(\mu):W\to W'` applied to the solution at the current time step."""
+    b: AffineLinear[Mu, Vector]
+    """Inhomogeneity of the first time step."""
+    t: np.ndarray[float]
+    """Time points at which the solution is approximated."""
+    W: InnerProduct[Mu]
+    """Inner product on the space :math:`W`."""
+    n: int
+    """Dimension of the space :math:`W`."""
+    K: int
+    """Number of time intervals, i.e. ``K+1`` time points."""
+    
+    @property
+    def n(self) -> int:
+        return self.W.shape[0]
+    
+    @property
+    def K(self) -> int:
+        return len(self.t)-1
+    
+    
+    def __init__(self, 
+                 LI: ParametricGalerkinOperator[Mu, Matrix],
+                 LE: ParametricGalerkinOperator[Mu, Matrix],
+                 b: AffineLinear[Mu, Vector],
+                 t: np.ndarray[float],
+                 solver: list[Solver] | Solver = [DirectSolver(factorize=True), DirectSolver(factorize=True)]):
+        r"""
+        Args:
+            LI:
+                Implicit part of the time-stepping scheme, i.e. the operator applied to the solution at the next time step.
+            LE:
+                Explicit part of the time-stepping scheme, i.e. the operator applied to the solution at the current time step.
+            b:
+                Inhomogeneity at the first iteration.
+            t:
+                Time points ``t_0, ..., t_K`` at which the solution is approximated.
+            solver:
+                Solver for the linear system per time step. Defaults to `DirectSolver`.
+        """
+        assert LI.shape == LE.shape
+        assert LI.V is LE.V is LE.U is LI.U
+        assert b.shape == (LI.shape[0],)
+        
+        self.LI = LI
+        self.LE = LE
+        self.b = wrap_affinelinear(b).compress()
+        self.t = t
+        self.W = LI.U
+        self._solver = wrap_solver(solver)
+        
+    def solve(self, mu: Mu) -> TimeSteppingSolution[Mu]:
+        r"""Solve the time-stepping problem for a given parameter.
+        
+        Args:
+            mu:
+                Parameter for which to solve the time-stepping problem.
+                
+        Returns:
+            Solution for the given parameter.
+        """
+        
+        LI = self.LI.B(mu)
+        LE = self.LE.B(mu)
+        b = self.b(mu)
+        
+        u = np.zeros((self.n, self.K+1))
+        u[:,self.K] = self._solver(LI, b)
+        for k in range(self.K,0,-1):
+            u[:,k-1] = self._solver(LI, LE @ u[:,k], u[:,k])
+            
+        return TimeSteppingSolution(self.t, u)
+
+class PrimalDualStationaryTimeSteppingGalerkinFOM(StationaryTimeSteppingGalerkinFOM):
+    r"""Model for primal-dual time-stepping problems with a Galerkin operator and stationary operators.
+        
+    For primal problem refer to `StationaryTimeSteppingGalerkinFOM`. For dual problem refer to `DualStationaryTimeSteppingGalerkinFOM`.
+    """
+
+    dual: DualStationaryTimeSteppingGalerkinFOM[Mu]
+    r"""Dual problem."""
+
+    def __init__(self, 
+                 LI: ParametricGalerkinOperator[Mu, Matrix],
+                 LE: ParametricGalerkinOperator[Mu, Matrix],
+                 b: AffineLinear[Mu, Vector],
+                 u0: AffineLinear[Mu, Vector],
+                 t: np.ndarray[float],
+                 solver = DirectSolver(factorize=True),
+                 l: AffineLinear[Mu, Vector] | None = None):
+        r"""
+        Args:
+            LI:
+                Implicit part of the time-stepping scheme, i.e. the operator applied to the solution at the next time step.
+            LE:
+                Explicit part of the time-stepping scheme, i.e. the operator applied to the solution at the current time step.
+            b:
+                Inhomogeneity at each iteration, i.e. ``b(mu)`` has shape ``(n, 1)``.
+            u0:
+                Initial value at ``t_0``.
+            t:
+                Time points ``t_0, ..., t_K`` at which the solution is approximated.
+            solver:
+                Solver for the linear system per time step. Defaults to `DirectSolver`.
+            l:
+                Affine decomposition of the output(s) of interest functional :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`. Might be ``None``, if no output of interest is given.
+        """
+        assert l is not None
+        try:
+            solver = list(solver)
+        except TypeError:
+            solver = [solver, solver]
+            
+        if len(solver) != 2:
+            raise ValueError("Solver must be a list of two solvers for primal and dual.")
+        
+        super().__init__(LI, LE, b, u0, t, solver[0], l)
+        
+        LI_T = ParametricGalerkinOperator(LI.B.T, LI.U, stability=LI._stability_solver, continuity=LI._continuity_solver)
+        LE_T = ParametricGalerkinOperator(LE.B.T, LE.U, stability=LE._stability_solver, continuity=LE._continuity_solver)
+        self.dual = DualStationaryTimeSteppingGalerkinFOM(LI_T, LE_T, l, t, solver[1])    
 
 def explicit_euler(A: Matrix | AffineLinear[Mu, Matrix],
                    M: Matrix | AffineLinear[Mu, Matrix],
