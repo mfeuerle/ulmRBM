@@ -564,6 +564,9 @@ def primaldual_greedy_rbm(
 
     n_disp_t = 3
     
+    if mu_select_mode not in (0, 1):
+        raise ValueError(f"Invalid mu_select_mode {mu_select_mode}. Must be 0 (select by state errors) or 1 (select by output error).")
+    
     start_time = time.time()
     
     fom = rom.fom
@@ -697,11 +700,9 @@ def primaldual_greedy_rbm(
         if mu_select_mode==0:
             selected_mu_idx.append(idx)
             selected_mu_idx_dual.append(idx_dual)
-        elif mu_select_mode==1:
+        else:
             selected_mu_idx.append(idx_out)
             selected_mu_idx_dual.append(idx_out)
-        else:
-            raise ValueError()
             
         err = err[idx]
         err_dual = err_dual[idx_dual]

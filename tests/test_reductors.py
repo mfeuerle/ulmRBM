@@ -232,3 +232,8 @@ class TestPrimalDualGreedy:
         assert flag == 1 and rom.shape[1] == rom.dual.shape[1] == 1
         assert np.isnan(err_out[-1])
         assert "Nmax reached" in capsys.readouterr().out
+
+    def test_invalid_mu_select_mode(self, rom):
+        with pytest.raises(ValueError, match="mu_select_mode"):
+            primaldual_greedy_rbm(rom, TRAIN, N=2, mu_select_mode=2, display=False)
+        assert rom.shape[1] == 0  # raised before any enrichment
