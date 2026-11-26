@@ -61,6 +61,9 @@ class OperatorContract:
     def test_eigenvectors(self, case, method):
         op, problem = case
         op = self.make(problem, stability=method, continuity=method)
+        # fixed start vector, since ARPACK with a random one rarely converges less accurate than the tolerance below
+        v0 = np.random.default_rng(0).standard_normal(problem.n)
+        op._eigsh_options_stability['v0'] = op._eigsh_options_continuity['v0'] = v0
         val, x = op.stability(MU, eigenvector=True)
         np.testing.assert_allclose(rayleigh_quotient(op, problem, MU, x), val, rtol=1e-6)
         val, x = op.continuity(MU, eigenvector=True)
