@@ -28,6 +28,12 @@ Time-Stepping Models
     StationaryTimeSteppingGalerkinFOM
     DualStationaryTimeSteppingGalerkinFOM
     PrimalDualStationaryTimeSteppingGalerkinFOM
+
+Time-Stepping Iterations
+------------------------
+.. autosummary::
+    :toctree: generated/
+
     theta_scheme
     explicit_euler
     implicit_euler
