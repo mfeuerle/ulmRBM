@@ -15,7 +15,7 @@ from warnings import warn
 
 from ulmRBM.core import Mu, Matrix, Vector
 from ulmRBM.solver import Solver, DirectSolver
-from ulmRBM.fom import Model, FOM, GalerkinFOM, PrimalDualModel, PrimalDualFOM
+from ulmRBM.fom import FOM, GalerkinFOM, PrimalDualFOM, PrimalDualGalerkinFOM
 from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 from ulmRBM.affine import AffineLinear, wrap_affinelinear
 
@@ -49,7 +49,7 @@ class ROM(FOM[Mu]):
     The reduced test space basis :math:`V_N(\mu)` is defined implicitly by a trial-to-test operator :math:`T(\mu)`, i.e. :math:`V_N(\mu) = T(\mu) U_N`. If the test space inner product is parameter independent, the default trial-to-test operator is given by the supremizing operator of the full-order model which will always lead to a stable reduced-order model.
     """
     
-    fom: Model[Mu]
+    fom: FOM[Mu] | GalerkinFOM[Mu]
     """Underlying full-order model."""
     U_basis: Vector | None
     """:math:`(n,N)` trial space basis matrix, where :math:`N` is the dimension of the reduced trial space."""
@@ -120,7 +120,7 @@ class ROM(FOM[Mu]):
 
     
     def __init__(self, 
-                 fom: Model[Mu],
+                 fom: FOM[Mu] | GalerkinFOM[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
                  trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
@@ -496,7 +496,7 @@ class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
         self._orthonormalize_U(U)        
         
 class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
-    r"""Primal-dual reduced-order Petrov-Galerkin model given, see `ROM` and `PrimalDualModel`.
+    r"""Primal-dual reduced-order Petrov-Galerkin model given, see `ROM` and `PrimalDualFOM`.
     """
     
     dual: PrimalDualROM[Mu]
@@ -513,7 +513,7 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
         return self._B_mixed_private
     
     def __init__(self, 
-                 fom: PrimalDualModel[Mu],
+                 fom: PrimalDualFOM[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
                  primal_trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
@@ -526,17 +526,17 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
             fom:
                 Full-order model to reduce.
             stability:
-                Estimator for the primal and dual full-order stability constant (they coincide). See `ROM` and `PrimalDualModel` for details.
+                Estimator for the primal and dual full-order stability constant (they coincide). See `ROM` and `PrimalDualFOM` for details.
             continuity:
-                Estimator for the primal and dual full-order continuity constant (they coincide). See `ROM` and `PrimalDualModel` for details.
+                Estimator for the primal and dual full-order continuity constant (they coincide). See `ROM` and `PrimalDualFOM` for details.
             primal_trial2test:
-                Trial-to-Test operator for the primal model. See `ROM` and `PrimalDualModel` for details.
+                Trial-to-Test operator for the primal model. See `ROM` and `PrimalDualFOM` for details.
             dual_trial2test:
-                Trial-to-Test operator for the dual model. See `ROM` and `PrimalDualModel` for details.
+                Trial-to-Test operator for the dual model. See `ROM` and `PrimalDualFOM` for details.
             solver:
-                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `ROM` and `PrimalDualModel`.
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `ROM` and `PrimalDualFOM`.
             residual:
-                List of two residual evaluation methods. See `ROM` and `PrimalDualModel`.
+                List of two residual evaluation methods. See `ROM` and `PrimalDualFOM`.
         """
         
         try:
@@ -606,14 +606,14 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
         
         
 class PrimalDualGalerkinROM(GalerkinROM[Mu], PrimalDualROM[Mu]):
-    r"""Primal-dual reduced-order Galerkin model given, see `GalerkinROM` and `PrimalDualModel`.
+    r"""Primal-dual reduced-order Galerkin model given, see `GalerkinROM` and `PrimalDualGalerkinFOM`.
     """
 
     dual: PrimalDualGalerkinROM[Mu]
     """Dual model."""
     
     def __init__(self, 
-                 fom: PrimalDualModel[Mu],
+                 fom: PrimalDualGalerkinFOM[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
                  solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
@@ -624,13 +624,13 @@ class PrimalDualGalerkinROM(GalerkinROM[Mu], PrimalDualROM[Mu]):
             fom:
                 Full-order model to reduce.
             stability:
-                Estimator for the primal and dual full-order stability constant (they coincide). See `GalerkinROM` and `PrimalDualModel` for details.
+                Estimator for the primal and dual full-order stability constant (they coincide). See `GalerkinROM` and `PrimalDualGalerkinFOM` for details.
             continuity:
-                Estimator for the primal and dual full-order continuity constant (they coincide). See `GalerkinROM` and `PrimalDualModel` for details.
+                Estimator for the primal and dual full-order continuity constant (they coincide). See `GalerkinROM` and `PrimalDualGalerkinFOM` for details.
             solver:
-                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `GalerkinROM` and `PrimalDualModel`.
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `GalerkinROM` and `PrimalDualGalerkinFOM`.
             residual:
-                List of two residual evaluation methods. See `GalerkinROM` and `PrimalDualModel`.
+                List of two residual evaluation methods. See `GalerkinROM` and `PrimalDualGalerkinFOM`.
         """
         
         try:

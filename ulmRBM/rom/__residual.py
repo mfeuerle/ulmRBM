@@ -18,7 +18,7 @@ import numpy as np
 
 from ulmRBM.core import NO_MU, Mu, Vector
 from ulmRBM.affine import AffineLinear
-from ulmRBM.fom import TimeSteppingSolution, PrimalDualModel
+from ulmRBM.fom import TimeSteppingSolution, PrimalDualFOM
 
 if TYPE_CHECKING:
     from ulmRBM.rom import ROM, StationaryTimeSteppingGalerkinROM
@@ -51,7 +51,7 @@ class ResidualNormEvaluator(Generic[Mu]):
         self.rom = rom
         self._initialize()
         
-        if isinstance(rom, PrimalDualModel):
+        if isinstance(rom, PrimalDualFOM):
             self._output = ValueError("Output norm should never be accessed for a primal-dual model, how did you even get here?")
         elif rom.fom.l is None:
             self._output = ValueError("Residual norm evaluator cannot compute output error since the FOM has no output functional.")

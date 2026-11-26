@@ -6,10 +6,8 @@ from __future__ import annotations
 
 
 __all__ = [
-    'Model',
     'FOM',
     'GalerkinFOM',
-    'PrimalDualModel',
     'PrimalDualFOM',
     'PrimalDualGalerkinFOM',
 ]
@@ -26,8 +24,8 @@ from ulmRBM.products import InnerProduct
 from ._operators import ParametricOperator, ParametricGalerkinOperator
     
     
-class Model(ParametricOperator[Mu]):
-    r"""Model given by a parametric linear system of equations.
+class _Model(ParametricOperator[Mu]):
+    r"""Internal base class for models given by a parametric linear system of equations.
     
     Extends `ParametricOperator` by adding a right-hand side and an optional output of interest functional, thus representing a parametric linear system of the form
     
@@ -65,7 +63,7 @@ class Model(ParametricOperator[Mu]):
     
     
     def __init__(self, f: AffineLinear[Mu, Vector] | Vector, l: AffineLinear[Mu, Vector] | Vector | None = None, solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None):
-        r"""This class is not not designt to instantiate directly.
+        r"""This class is not designed to be instantiated directly.
         
         Call this constructor only from child classes that also call the constructor of `ParametricOperator` prior to this constructor.
         
@@ -122,7 +120,7 @@ class Model(ParametricOperator[Mu]):
         return self.l(mu) @ u
     
     
-class FOM(Model[Mu], ParametricOperator[Mu]):
+class FOM(_Model[Mu], ParametricOperator[Mu]):
     r"""Petrov-Galerkin full-order model given by a parametric linear system of equations.
     
     Extends `ParametricOperator` by adding a right-hand side and an optional output of interest functional, thus representing a parametric linear system of the form
@@ -153,17 +151,17 @@ class FOM(Model[Mu], ParametricOperator[Mu]):
             B:
                 Affine decomposition of the system matrix.
             f:
-                See `Model`.
+                Affine decomposition of the right-hand side.
             U:
                 Inner product on the trial space.
             V:
                 Inner product on the test space.
             l:
-                See `Model`.
+                Optional affine decomposition of the output(s) of interest functional.
             stability, continuity:
                 See `ParametricOperator`.
             solver:
-                See `Model`.
+                Solver for the linear system. Defaults to `IterativeSolver`.
             supremizer:
                 See `ParametricOperator`.
         """
@@ -179,10 +177,10 @@ class FOM(Model[Mu], ParametricOperator[Mu]):
             raise ValueError("Inner products U and V must be provided when B is not a ParametricOperator.")
         
         ParametricOperator.__init__(self, B, U, V, stability, continuity, supremizer)
-        Model.__init__(self, f, l, solver)
+        _Model.__init__(self, f, l, solver)
         
 
-class GalerkinFOM(Model[Mu], ParametricGalerkinOperator[Mu]):
+class GalerkinFOM(_Model[Mu], ParametricGalerkinOperator[Mu]):
     r"""Galerkin full-order model given by a parametric linear system of equations.
     
     Extends `ParametricGalerkinOperator` by adding a right-hand side and an optional output of interest functional, thus representing a parametric linear system of the form
@@ -212,15 +210,15 @@ class GalerkinFOM(Model[Mu], ParametricGalerkinOperator[Mu]):
             B:
                 Affine decomposition of the system matrix.
             f:
-                See `Model`.
+                Affine decomposition of the right-hand side.
             U:
                 Inner product on the trial and test space.
             l:
-                See `Model`.
+                Optional affine decomposition of the output(s) of interest functional.
             stability, continuity:
                 See `ParametricGalerkinOperator`.
             solver:
-                See `Model`.
+                Solver for the linear system. Defaults to `IterativeSolver`.
             supremizer:
                 See `ParametricGalerkinOperator`.
         """
@@ -237,24 +235,24 @@ class GalerkinFOM(Model[Mu], ParametricGalerkinOperator[Mu]):
             raise ValueError("Inner product U must be provided when B is not a ParametricOperator.")
         
         ParametricGalerkinOperator.__init__(self, B, U, stability, continuity, supremizer)
-        Model.__init__(self, f, l, solver)
+        _Model.__init__(self, f, l, solver)
         
         
         
         
-class PrimalDualModel(Model[Mu]):
-    r"""Primal-dual model given by a parametric linear system of equations.
+class _PrimalDualModel(_Model[Mu]):
+    r"""Internal base class for primal-dual models given by a parametric linear system of equations.
     
-    The primal model is as in `Model`, while the corresponding dual model is given by :math:`B_{\text{dual}}(\mu) = B(\mu)^T`, :math:`f_{\text{dual}}(\mu) = -l(\mu)` and :math:`l_{\text{dual}}(\mu) = -f(\mu)`, :math:`U_{\text{dual}} = V` and :math:`V_{\text{dual}} = U`.
+    The primal model is as in `_Model`, while the corresponding dual model is given by :math:`B_{\text{dual}}(\mu) = B(\mu)^T`, :math:`f_{\text{dual}}(\mu) = -l(\mu)` and :math:`l_{\text{dual}}(\mu) = -f(\mu)`, :math:`U_{\text{dual}} = V` and :math:`V_{\text{dual}} = U`.
     
     As a important note, the stability and continuity constant of the primal and dual model coincide.
     """
     
-    dual: Model[Mu]
+    dual: _Model[Mu]
     r"""Dual model."""
     
-    def __init__(self, dual: Model[Mu]):
-        r"""This class is not not designt to instantiate directly.
+    def __init__(self, dual: _Model[Mu]):
+        r"""This class is not designed to be instantiated directly.
         
         Call this constructor only from child classes that setup ``self`` and ``dual``. This constructor only establishes the link between the primal and dual model and copies the stability and continuity constants from the primal to the dual model as they coincide.
         
@@ -266,10 +264,12 @@ class PrimalDualModel(Model[Mu]):
         self.dual.stability = self.stability
         self.dual.continuity = self.continuity
         
-class PrimalDualFOM(FOM[Mu], PrimalDualModel[Mu]):
+class PrimalDualFOM(FOM[Mu], _PrimalDualModel[Mu]):
     r"""Primal-dual full-order Petrov-Galerkin model given by a parametric linear system of equations.
     
-    For the primal model, see `FOM`, for the dual model see `PrimalDualModel`.
+    For the primal model, see `FOM`. The dual model is given by :math:`B_{\text{dual}}(\mu) = B(\mu)^T`, :math:`f_{\text{dual}}(\mu) = -l(\mu)` and :math:`l_{\text{dual}}(\mu) = -f(\mu)`, :math:`U_{\text{dual}} = V` and :math:`V_{\text{dual}} = U`.
+    
+    As a important note, the stability and continuity constant of the primal and dual model coincide.
     """
     
     dual: FOM[Mu]
@@ -291,15 +291,15 @@ class PrimalDualFOM(FOM[Mu], PrimalDualModel[Mu]):
             B,f,U,V,l:
                 See `FOM`.
             stability:
-                Stability constant used for primal and dual model (as they coincide). See also `FOM` and `PrimalDualModel`.
+                Stability constant used for primal and dual model (as they coincide). See also `FOM`.
             continuity:
-                Continuity constant used for primal and dual model (as they coincide). See also `FOM` and `PrimalDualModel`.
+                Continuity constant used for primal and dual model (as they coincide). See also `FOM`.
             solver:
-                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `FOM` and `PrimalDualModel`.
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `FOM`.
             primal_supremizer:
                 Supremizer function for the primal model. See also `FOM`.
             dual_supremizer:
-                Supremizer function for the dual model. See also `FOM` and `PrimalDualModel`.
+                Supremizer function for the dual model. See also `FOM`.
         """
         
         try:
@@ -312,12 +312,14 @@ class PrimalDualFOM(FOM[Mu], PrimalDualModel[Mu]):
             
         super().__init__(B, f, U, V, l, stability, continuity, solver[0], primal_supremizer)
         dual = FOM(B.T, -l, V, U, -f, solver=solver[1], supremizer=dual_supremizer)
-        PrimalDualModel.__init__(self, dual)
+        _PrimalDualModel.__init__(self, dual)
         
 class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualFOM[Mu]):
     r"""Primal-dual full-order Galerkin model given by a parametric linear system of equations.
     
-    For the primal model, see `GalerkinFOM`, for the dual model see `PrimalDualModel`.
+    For the primal model, see `GalerkinFOM`. The dual model is given by :math:`B_{\text{dual}}(\mu) = B(\mu)^T`, :math:`f_{\text{dual}}(\mu) = -l(\mu)` and :math:`l_{\text{dual}}(\mu) = -f(\mu)` and :math:`U_{\text{dual}} = U`.
+    
+    As a important note, the stability and continuity constant of the primal and dual model coincide.
     """
     
     dual: GalerkinFOM[Mu]
@@ -338,15 +340,15 @@ class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualFOM[Mu]):
             B,f,U,l:
                 See `GalerkinFOM`.
             stability:
-                Stability constant used for primal and dual model (as they coincide). See also `GalerkinFOM` and `PrimalDualModel`.
+                Stability constant used for primal and dual model (as they coincide). See also `GalerkinFOM`.
             continuity:
-                Continuity constant used for primal and dual model (as they coincide). See also `GalerkinFOM` and `PrimalDualModel`.
+                Continuity constant used for primal and dual model (as they coincide). See also `GalerkinFOM`.
             solver:
-                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `GalerkinFOM` and `PrimalDualModel`.
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `GalerkinFOM`.
             primal_supremizer:
                 Supremizer function for the primal model. See also `GalerkinFOM`.
             dual_supremizer:
-                Supremizer function for the dual model. See also `GalerkinFOM` and `PrimalDualModel`.
+                Supremizer function for the dual model. See also `GalerkinFOM`.
         """
         
         try:
@@ -359,4 +361,4 @@ class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualFOM[Mu]):
             
         super().__init__(B, f, U, l, stability, continuity, solver[0], primal_supremizer)
         dual = GalerkinFOM(B.T, -l, U, -f, solver=solver[1], supremizer=dual_supremizer)
-        PrimalDualModel.__init__(self, dual)
+        _PrimalDualModel.__init__(self, dual)
