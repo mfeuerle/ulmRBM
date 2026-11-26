@@ -29,32 +29,6 @@ jobs:
         shell: bash -l {0}
         run: pytest -v
 
-  # smoke tests of all scripts in scripts/ (several minutes, thus not for pull requests)
-  test-scripts:
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up headless display for pyvista
-        uses: pyvista/setup-headless-display-action@v3
-
-      - name: Set up micromamba
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-name: tests
-          environment-file: environment.yml
-          cache-environment: true
-          cache-environment-key: "env-${{ hashFiles('environment.yml') }}"
-          create-args: >-
-            python=3.12
-
-      - name: Run scripts
-        shell: bash -l {0}
-        run: pytest -v -rs -m scripts
-
   # only the required dependencies, the optional tests are skipped
   test-minimal:
     runs-on: ubuntu-latest

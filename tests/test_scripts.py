@@ -49,7 +49,8 @@ def test_script(script, tmp_path):
 
     env = dict(os.environ, MPLBACKEND="Agg", PYVISTA_OFF_SCREEN="true",
                PYTHONPATH=os.pathsep.join([str(ROOT), os.environ.get("PYTHONPATH", "")]))
-    # run in a temporary directory, as some scripts write output files
+    # run in a temporary directory, as some scripts write output files, and in a new session, such that
+    # signals the script sends to its process group (e.g. on an MPI abort) cannot terminate pytest
     result = subprocess.run([sys.executable, str(script)], cwd=tmp_path, env=env,
-                            capture_output=True, text=True, timeout=TIMEOUT)
+                            capture_output=True, text=True, timeout=TIMEOUT, start_new_session=True)
     assert result.returncode == 0, f"{script.name} failed:\n{result.stderr[-3000:]}"
