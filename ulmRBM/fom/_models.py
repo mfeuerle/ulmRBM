@@ -311,7 +311,8 @@ class PrimalDualFOM(FOM[Mu], _PrimalDualModel[Mu]):
             raise ValueError("Solver must be a list of two solvers for primal and dual.")
             
         super().__init__(B, f, U, V, l, stability, continuity, solver[0], primal_supremizer)
-        dual = FOM(B.T, -l, V, U, -f, solver=solver[1], supremizer=dual_supremizer)
+        # use the attributes of self, since B might have been given as ParametricOperator
+        dual = FOM(self.B.T, -self.l, self.V, self.U, -self.f, solver=solver[1], supremizer=dual_supremizer)
         _PrimalDualModel.__init__(self, dual)
         
 class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualFOM[Mu]):
@@ -360,5 +361,6 @@ class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualFOM[Mu]):
             raise ValueError("Solver must be a list of two solvers for primal and dual.")
             
         super().__init__(B, f, U, l, stability, continuity, solver[0], primal_supremizer)
-        dual = GalerkinFOM(B.T, -l, U, -f, solver=solver[1], supremizer=dual_supremizer)
+        # use the attributes of self, since B might have been given as ParametricGalerkinOperator
+        dual = GalerkinFOM(self.B.T, -self.l, self.U, -self.f, solver=solver[1], supremizer=dual_supremizer)
         _PrimalDualModel.__init__(self, dual)
