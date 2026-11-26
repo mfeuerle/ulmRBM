@@ -237,3 +237,22 @@ class TestPrimalDualGreedy:
         with pytest.raises(ValueError, match="mu_select_mode"):
             primaldual_greedy_rbm(rom, TRAIN, N=2, mu_select_mode=2, display=False)
         assert rom.shape[1] == 0  # raised before any enrichment
+
+
+def _heat_rom():
+    heat = HeatProblem(n=10, K=10)
+    fom = build_fom(heat, 'implicit_euler', l=wrap_affinelinear(heat.l_vec))
+    return StationaryTimeSteppingGalerkinROM(fom, ExactStability(fom.LI), ExactContinuity(fom.LE), residual='full')
+
+
+@pytest.mark.parametrize("strong", [False, True], ids=['weak', 'strong'])
+@pytest.mark.parametrize("reductor", [
+    lambda strong: greedy_rbm(make_rom(StationaryProblem()), TRAIN, N=2, tol=0.0, strong=strong, display=False),
+    lambda strong: pod_rbm(make_rom(StationaryProblem()), TRAIN, N=2, display=False),
+    lambda strong: pod_greedy_rbm(_heat_rom(), np.linspace(0.5, 2, 4), N=2, tol=0.0, strong=strong, display=False),
+    lambda strong: primaldual_greedy_rbm(make_rom(StationaryProblem(), PrimalDualGalerkinFOM, PrimalDualGalerkinROM),
+                                         TRAIN, N=2, tol=0.0, strong=strong, display=False),
+], ids=['greedy', 'pod', 'pod_greedy', 'primaldual_greedy'])
+def test_display_false_prints_nothing(reductor, strong, capsys):
+    reductor(strong)
+    assert capsys.readouterr().out == ""

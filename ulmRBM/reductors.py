@@ -403,7 +403,7 @@ def pod_greedy_rbm(
     if isinstance(strong, bool):
         if display: opening_message(strong)
         if strong: 
-            print(f"{time.time() - start_time:6.1f}s: Computing {len(mu_train)} full solutions for strong POD-greedy...")
+            if display: print(f"{time.time() - start_time:6.1f}s: Computing {len(mu_train)} full solutions for strong POD-greedy...")
             u_fom = np.asarray([fom.solve(mu) for mu in mu_train], dtype=TimeSteppingSolution)
     else:
         if len(strong) != len(mu_train):
@@ -460,7 +460,7 @@ def pod_greedy_rbm(
     start = 0
     if rom.n == 0:
         start = 1
-        print(f"{time.time() - start_time:6.1f}s: Iteration {0:3d}:")
+        if display: print(f"{time.time() - start_time:6.1f}s: Iteration {0:3d}:")
         _perform_iteration(0, np.min([Npod, N]))
     
     ########################
@@ -470,7 +470,7 @@ def pod_greedy_rbm(
     n = start
     while n*Npod < N:
         
-        print(f"{time.time() - start_time:6.1f}s:\t computing errors for {len(mu_train)} parameters...")
+        if display: print(f"{time.time() - start_time:6.1f}s:\t computing errors for {len(mu_train)} parameters...")
         if strong:
             err = np.array([np.max(rom.error(mu, u_fom=u_mu)) for mu, u_mu in zip(mu_train, u_fom)])
         else:
@@ -489,7 +489,7 @@ def pod_greedy_rbm(
             flag = 0
             break
         
-        print(f"{time.time() - start_time:6.1f}s: Iteration {n:3d}{f" (N={rom.n:3d})" if not start or Npod != 1 else ""}: max. error={err:.2e} at mu_train[{idx}]")
+        if display: print(f"{time.time() - start_time:6.1f}s: Iteration {n:3d}{f" (N={rom.n:3d})" if not start or Npod != 1 else ""}: max. error={err:.2e} at mu_train[{idx}]")
         _perform_iteration(idx, np.min([Npod, N - n*Npod]))
         n += 1
     
@@ -498,7 +498,7 @@ def pod_greedy_rbm(
     
     codes= {0: "tolerance reached", 1: "Nmax reached"}
     
-    print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.n:3d})" if not start or Npod != 1 else ""}: stopping due to {codes[flag]}, max. error={err:.2e}\n")
+    if display: print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.n:3d})" if not start or Npod != 1 else ""}: stopping due to {codes[flag]}, max. error={err:.2e}\n")
     
     if flag != 0:
         err_decay.append(np.nan)
