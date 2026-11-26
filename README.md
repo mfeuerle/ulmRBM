@@ -23,7 +23,13 @@ Then open `docs/_build/html/index.html`
 
 ## Running tests
 
-Use `pytest`
+Run all tests from the repository root with
+
+```
+pytest
+```
+
+The tests for the optional FEniCSx and `kron` functionality are skipped if these packages are not installed. Known bugs are marked as expected failures (`xfail`), list them with `pytest -rx`. All tests run automatically on GitHub for each push to `main` and each pull request, once in the full conda environment (`environment.yml`) and once with only the required dependencies `numpy` and `scipy`.
 
 ## Package structure
 

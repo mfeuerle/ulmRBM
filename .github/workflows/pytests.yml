@@ -4,9 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  test:
+  # full environment including the optional dependencies (FEniCSx, kron)
+  test-full:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,3 +28,27 @@ jobs:
       - name: Run pytest
         shell: bash -l {0}
         run: pytest -v
+
+  # only the required dependencies, the optional tests are skipped
+  test-minimal:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install numpy scipy pytest
+
+      - name: Run pytest
+        run: pytest -v -rs
