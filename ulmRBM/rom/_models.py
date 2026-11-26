@@ -117,8 +117,8 @@ class ROM(FOM[Mu]):
         
     @property
     def shape(self):
-        return (0 if self.U_basis is None else self.U_basis.shape[1],
-                0 if self.V_basis is None else self.V_basis.shape[1],
+        return (0 if self.V_basis is None else self.V_basis.shape[1],
+                0 if self.U_basis is None else self.U_basis.shape[1],
                 self.fom.shape[2])
 
     
@@ -241,7 +241,7 @@ class ROM(FOM[Mu]):
     
     def _add_basis_U(self, basis: Vector):
         if basis.ndim == 1: basis = basis.reshape(-1,1)
-        if basis.shape[0] != self.fom.shape[0]:
+        if basis.shape[0] != self.fom.U.shape[0]:
             raise ValueError("Basis vector has incompatible dimension.")
         if self.U_basis is None:
             self.U_basis = basis
@@ -253,7 +253,7 @@ class ROM(FOM[Mu]):
         basis = wrap_affinelinear(basis)
         if len(basis.shape) == 1: 
             basis = basis.apply2data(lambda dq: dq.reshape(-1,1))
-        if basis.shape[0] != self.fom.shape[0]:
+        if basis.shape[0] != self.fom.V.shape[0]:
             raise ValueError("Basis vector has incompatible dimension.")
         if self.V_basis is None:
             V_basis = basis

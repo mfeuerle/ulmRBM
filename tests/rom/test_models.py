@@ -246,13 +246,20 @@ class TestROM(ROMContract):
         rom.add_basis(self.snapshots(problem))
         np.testing.assert_allclose(rom.V_basis(None), rom.U_basis)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: ROM uses fom.shape[0] (test dimension) for the trial basis and swaps (m, n) in ROM.shape")
     def test_rectangular_fom(self):
         B = np.vstack([np.eye(3), np.ones((1, 3))])
         fom = FOM(B, np.ones(4), EuclideanInnerProduct(3), EuclideanInnerProduct(4), stability='direct', continuity='direct')
-        rom = ROM(fom, ExactStability(fom))
+        rom = ROM(fom, ExactStability(fom), trial2test=lambda basis: np.vstack([basis, np.zeros((1, basis.shape[1]))]))
         rom.add_basis(np.eye(3)[:, :2])
         assert rom.shape[:2] == (2, 2)
+        rom.add_basis(np.eye(3)[:, [2]])
+        assert rom.U_basis.shape == (3, 3) and rom.V_basis.shape == (4, 3)
+        with pytest.raises(ValueError):
+            rom.add_basis(np.ones(4))
+
+    def test_shape_follows_fom_convention(self, rom):
+        """Like ``FOM.shape``, ``ROM.shape`` is (test dimension, trial dimension, number of outputs)."""
+        assert rom.shape == (rom.V_basis.shape[1], rom.U_basis.shape[1], rom.fom.shape[2])
 
 
 class TestGalerkinROM(ROMContract):
