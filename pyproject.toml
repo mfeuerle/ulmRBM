@@ -19,8 +19,11 @@ include = ["ulmRBM*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# the scripts take several minutes, run them explicitly via `pytest -m scripts`
+addopts = "-m 'not scripts'"
 markers = [
     "slow: tests with noticeable runtime (e.g. greedy algorithms or SCM)",
+    "scripts: smoke tests running the scripts in scripts/ (deselected by default)",
 ]
 filterwarnings = [
     # efficiency warnings are expected when testing matrix-free / Kronecker formats with direct solvers

@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from itertools import product
 
 from ulmRBM.fenicsx import  norms
-from ulmRBM.fenicsx.problems import thermal_block, assemble_system
+from ulmRBM.fenicsx.problems import thermal_block
 from ulmRBM.solver import DirectSolver
 from ulmRBM.fom import FOM, GalerkinFOM
 from ulmRBM import rom
@@ -22,7 +22,6 @@ n_plots_per_row = 4
 #########################
 
 B, f, U, V = thermal_block([50, 50], nblocks)
-B, f = assemble_system(B, f, U, V)
 
 print(f"System matrix shape: {B.shape}")
 print(f"Number of affine terms in B: {len(B)}")
