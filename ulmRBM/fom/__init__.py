@@ -14,10 +14,8 @@ Standard Models
 .. autosummary::
     :toctree: generated/
     
-    Model
     FOM
     GalerkinFOM
-    PrimalDualModel
     PrimalDualFOM
     PrimalDualGalerkinFOM
     
