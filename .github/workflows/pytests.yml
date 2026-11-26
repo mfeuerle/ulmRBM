@@ -27,7 +27,14 @@ jobs:
 
       - name: Run pytest
         shell: bash -l {0}
-        run: pytest -v
+        # unbuffered and in its own session, such that the log shows how far pytest got and with which
+        # status it ended, even if the process group gets terminated (as seen with exit code 143)
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          setsid --wait pytest -v && status=0 || status=$?
+          echo "pytest exited with status $status"
+          exit $status
 
   # only the required dependencies, the optional tests are skipped
   test-minimal:

@@ -56,4 +56,7 @@ jobs:
         # unbuffered, such that the log shows which script is running if the job gets terminated
         env:
           PYTHONUNBUFFERED: "1"
-        run: pytest -v -rs -m scripts
+        run: |
+          setsid --wait pytest -v -rs -m scripts && status=0 || status=$?
+          echo "pytest exited with status $status"
+          exit $status
