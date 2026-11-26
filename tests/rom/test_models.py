@@ -13,6 +13,7 @@ from ulmRBM.rom import ROM, GalerkinROM, PrimalDualROM, PrimalDualGalerkinROM, E
 from ulmRBM.solver import DirectSolver
 from ulmRBM.products import EuclideanInnerProduct
 from tests.problems import StationaryProblem, as_dense
+from ulmRBM.rom._residuals import AffineResidualNormEvaluator, FullResidualNormEvaluator
 
 SNAPSHOT_MUS = np.array([[0.5, 0.5], [2.0, 1.0], [1.0, 2.0]])
 TEST_MUS = np.array([[0.8, 1.3], [1.7, 0.6], [1.2, 1.9], [0.6, 1.6]])
@@ -217,15 +218,20 @@ class PrimalDualROMContract:
                         / problem.stability(mu))
             np.testing.assert_allclose(rom.output_error_bound(mu), expected, rtol=1e-8)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: a single residual method string is split into characters by list(residual)")
-    def test_single_residual_method(self, fom):
-        self.make_rom(fom, residual='full')
+    @pytest.mark.parametrize("method", ['affine', 'full'])
+    def test_single_residual_method(self, fom, method):
+        rom = self.make_rom(fom, residual=method)
+        assert type(rom._residual_evaluator) is type(rom.dual._residual_evaluator)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: the dual ROM is constructed with shifted positional arguments, so residual[1] is passed as list")
     @pytest.mark.parametrize("method", ['affine', 'full'])
     def test_residual_methods(self, fom, method):
-        rom = self.make_rom(fom, residual=[method, method])
-        assert isinstance(rom.dual._residual_evaluator, type(rom._residual_evaluator))
+        rom = self.make_rom(fom, residual=[method, 'full'])
+        assert isinstance(rom._residual_evaluator, {'affine': AffineResidualNormEvaluator, 'full': FullResidualNormEvaluator}[method])
+        assert isinstance(rom.dual._residual_evaluator, FullResidualNormEvaluator)
+
+    def test_invalid_number_of_residual_methods(self, fom):
+        with pytest.raises(ValueError):
+            self.make_rom(fom, residual=['full'] * 3)
 
     @pytest.mark.xfail(strict=True, raises=AttributeError, reason="BUG: assembling fails if only the primal (or dual) basis is set")
     def test_assemble_with_primal_basis_only(self, fom, problem):
