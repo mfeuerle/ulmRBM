@@ -52,7 +52,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     @LI.setter
     def LI(self, value: AffineLinear[Mu, Matrix]):
         if value is not None:
-            self._LI = ParametricGalerkinOperator(value, self.W, self._solver)
+            self._LI = ParametricGalerkinOperator(value, self.W)
         else:
             self._LI = None
         

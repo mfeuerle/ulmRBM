@@ -113,7 +113,6 @@ def test_orthonormalize(rom, heat_problem):
     np.testing.assert_allclose(rom.W_basis.T @ rom.W_basis, np.eye(rom.n), atol=1e-10)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: the reduced LI is constructed with the solver as stability argument")
 def test_reduced_operators_keep_constants(full_rom, fom):
     np.testing.assert_allclose(full_rom.LI.stability(MUS[0]), fom.LI.stability(MUS[0]), rtol=1e-6)
 
