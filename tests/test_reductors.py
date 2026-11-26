@@ -226,3 +226,9 @@ class TestPrimalDualGreedy:
         mu = TRAIN[7]
         primal_only = rom._residual_evaluator.dual_norm(mu, rom.solve(mu)) * np.linalg.norm(rom.fom.l(mu)) / rom._fom_stability_estimator(mu)
         assert rom.output_error_bound(mu) < primal_only
+
+    def test_single_iteration_with_display(self, rom, capsys):
+        flag, (err_out, _, _), _ = primaldual_greedy_rbm(rom, TRAIN, N=1, tol=0.0, display=True)
+        assert flag == 1 and rom.shape[1] == rom.dual.shape[1] == 1
+        assert np.isnan(err_out[-1])
+        assert "Nmax reached" in capsys.readouterr().out

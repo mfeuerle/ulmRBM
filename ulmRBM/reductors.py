@@ -668,6 +668,7 @@ def primaldual_greedy_rbm(
 
     
     flag = 1
+    err_out = np.nan  # in case no error is computed, e.g. for N=1 and an empty rom
     for n in range(start, N):
         
         if len(mu_train) == 0:
