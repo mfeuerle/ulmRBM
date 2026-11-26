@@ -130,7 +130,6 @@ class TestPrimalDualStationaryTimeSteppingGalerkinFOM(TestStationaryTimeStepping
         with pytest.raises(AssertionError):
             build_fom(heat_problem, scheme, PrimalDualStationaryTimeSteppingGalerkinFOM)
 
-    @pytest.mark.xfail(strict=True, raises=TypeError, reason="BUG: default solver of DualStationaryTimeSteppingGalerkinFOM is a list, which is not callable")
     def test_dual_default_solver(self, heat_problem, scheme):
         fom = build_fom(heat_problem, scheme, l=wrap_affinelinear(heat_problem.l_vec))
         dual = DualStationaryTimeSteppingGalerkinFOM(fom.LI, fom.LE, heat_problem.l_vec, fom.t)

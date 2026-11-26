@@ -219,7 +219,7 @@ class DualStationaryTimeSteppingGalerkinFOM():
                  LE: ParametricGalerkinOperator[Mu, Matrix],
                  b: AffineLinear[Mu, Vector],
                  t: np.ndarray[float],
-                 solver: list[Solver] | Solver = [DirectSolver(factorize=True), DirectSolver(factorize=True)]):
+                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None):
         r"""
         Args:
             LI:
@@ -231,7 +231,7 @@ class DualStationaryTimeSteppingGalerkinFOM():
             t:
                 Time points ``t_0, ..., t_K`` at which the solution is approximated.
             solver:
-                Solver for the linear system per time step.
+                Solver for the linear system per time step. Defaults to a factorizing `DirectSolver`.
         """
         assert LI.shape == LE.shape
         assert LI.V is LE.V is LE.U is LI.U
@@ -242,7 +242,7 @@ class DualStationaryTimeSteppingGalerkinFOM():
         self.b = wrap_affinelinear(b).compress()
         self.t = t
         self.W = LI.U
-        self._solver = wrap_solver(solver)
+        self._solver = wrap_solver(solver if solver is not None else DirectSolver(factorize=True))
         
     def solve(self, mu: Mu) -> TimeSteppingSolution[Mu]:
         r"""Solve the time-stepping problem for a given parameter.
