@@ -233,11 +233,17 @@ class PrimalDualROMContract:
         with pytest.raises(ValueError):
             self.make_rom(fom, residual=['full'] * 3)
 
-    @pytest.mark.xfail(strict=True, raises=AttributeError, reason="BUG: assembling fails if only the primal (or dual) basis is set")
     def test_assemble_with_primal_basis_only(self, fom, problem):
         rom = self.make_rom(fom)
         rom.add_basis(problem.solution(SNAPSHOT_MUS[0]))
         rom.assemble()
+        assert rom._B_mixed is None and rom.dual._B_mixed is None
+
+    def test_assemble_with_dual_basis_only(self, fom, problem):
+        rom = self.make_rom(fom)
+        rom.dual.add_basis(problem.dual_solution(SNAPSHOT_MUS[0]))
+        rom.assemble()
+        assert rom._B_mixed is None and rom.dual._B_mixed is None
 
 
 class TestROM(ROMContract):

@@ -572,9 +572,10 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
             self.dual._need_assemble_B_mixed = False
             if self.dual.U_basis is not None and self.U_basis is not None:
                 self._B_mixed_private = self.dual.U_basis.T @ self.fom.B @ self.U_basis
+                self.dual._B_mixed_private = self._B_mixed_private.T
             else:
                 self._B_mixed_private = None
-            self.dual._B_mixed_private = self._B_mixed_private.T
+                self.dual._B_mixed_private = None
                 
     def _mark_for_assembly(self, U: bool = False, V: bool = False):
         super()._mark_for_assembly(U, V)
