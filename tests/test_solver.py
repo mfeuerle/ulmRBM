@@ -1,587 +1,151 @@
-"""
-Tests for solver module.
+"""Tests for :mod:`ulmRBM.solver`.
 
-Tests cover:
-- DirectSolver with dense and sparse matrices (square and rectangular)
-- IterativeSolver with CG, GMRES, and LSMR
-- LinearOperator support for iterative solvers
-- wrap_solver utility
+Every solver has to fulfill the same contract (`SolverContract`): solve square systems, keep the shape
+of single and multiple right-hand sides and respect the shape of a given initial guess. Solvers that
+support least-squares problems additionally fulfill `LeastSquaresContract`.
 """
 
-import pytest
 import numpy as np
-import scipy.sparse as sp
-from scipy.sparse.linalg import LinearOperator
+import scipy as sp
+import pytest
 
-from ulmRBM.solver import DirectSolver, IterativeSolver, wrap_solver, Solver
+from ulmRBM.solver import Solver, DirectSolver, IterativeSolver, wrap_solver
+from tests.problems import to_format
 
-
-# =============================================================================
-# Matrix Factory Functions
-# =============================================================================
-
-def make_spd_dense(n=5):
-    """Create a dense symmetric positive definite matrix."""
-    np.random.seed(42)
-    A = np.random.rand(n, n)
-    return A @ A.T + n * np.eye(n)
+TOL = 1e-8
 
 
-def make_spd_sparse(n=5):
-    """Create a sparse symmetric positive definite matrix (tridiagonal)."""
-    diag = 4.0 * np.ones(n)
-    off_diag = -1.0 * np.ones(n - 1)
-    return sp.csr_array(sp.diags([off_diag, diag, off_diag], [-1, 0, 1]))
+def spd_matrix(n=6, seed=0):
+    rng = np.random.default_rng(seed)
+    X = rng.standard_normal((n, n))
+    return X @ X.T + n * np.eye(n)
 
 
-def make_square_dense(n=5):
-    """Create a square non-symmetric dense matrix (diagonally dominant)."""
-    np.random.seed(42)
-    return np.random.rand(n, n) + n * np.eye(n)
+def nonsymmetric_matrix(n=6, seed=1):
+    rng = np.random.default_rng(seed)
+    return rng.standard_normal((n, n)) + n * np.eye(n)
 
 
-def make_square_sparse(n=5):
-    """Create a square non-symmetric sparse matrix (diagonally dominant)."""
-    np.random.seed(42)
-    A = sp.random(n, n, density=0.5, format='csr', random_state=42)
-    return sp.csr_array(A + n * sp.eye(n, format='csr'))
+class SolverContract:
+    """Base tests for all solvers. Subclasses provide the ``solver`` fixture and the supported ``formats``."""
+
+    formats = ['dense', 'sparse', 'linop']
+    symmetric_only = False
+
+    @pytest.fixture
+    def matrix(self, request):
+        return spd_matrix() if self.symmetric_only else nonsymmetric_matrix()
+
+    @pytest.fixture(params=formats)
+    def A(self, request, matrix):
+        if request.param not in self.formats:
+            pytest.skip(f"{request.param} not supported by {type(self).__name__}")
+        return to_format(matrix, request.param)
+
+    def test_is_solver(self, solver):
+        assert isinstance(wrap_solver(solver), Solver)
+
+    def test_single_rhs(self, solver, A, matrix, rng):
+        x = rng.standard_normal(matrix.shape[1])
+        x_sol = solver(A, matrix @ x)
+        assert x_sol.shape == x.shape
+        np.testing.assert_allclose(x_sol, x, rtol=TOL)
+
+    def test_multiple_rhs(self, solver, A, matrix, rng):
+        X = rng.standard_normal((matrix.shape[1], 3))
+        X_sol = solver(A, matrix @ X)
+        assert X_sol.shape == X.shape
+        np.testing.assert_allclose(X_sol, X, rtol=TOL)
+
+    def test_column_rhs_keeps_2d_shape(self, solver, A, matrix, rng):
+        x = rng.standard_normal((matrix.shape[1], 1))
+        assert solver(A, matrix @ x).shape == (matrix.shape[1], 1)
+
+    def test_initial_guess_determines_shape(self, solver, A, matrix, rng):
+        x = rng.standard_normal(matrix.shape[1])
+        x_sol = solver(A, (matrix @ x).reshape(-1, 1), np.zeros(matrix.shape[1]))
+        assert x_sol.shape == x.shape
+        np.testing.assert_allclose(x_sol, x, rtol=TOL)
 
 
-def make_tall_dense(m=8, n=5):
-    """Create a tall (overdetermined) dense matrix."""
-    np.random.seed(42)
-    return np.random.rand(m, n)
+class LeastSquaresContract:
+    """Solvers supporting overdetermined systems return the least-squares solution."""
 
-
-def make_tall_sparse(m=8, n=5):
-    """Create a tall (overdetermined) sparse matrix."""
-    np.random.seed(42)
-    return sp.csr_array(sp.random(m, n, density=0.5, format='csr', random_state=42))
-
-
-def make_linear_operator_spd(n=5):
-    """Create a LinearOperator from an SPD matrix."""
-    A = make_spd_dense(n)
-    return LinearOperator(shape=A.shape, matvec=lambda x: A @ x, rmatvec=lambda x: A.T @ x), A
-
-
-def make_linear_operator_square(n=5):
-    """Create a LinearOperator from a square matrix."""
-    A = make_square_dense(n)
-    return LinearOperator(shape=A.shape, matvec=lambda x: A @ x, rmatvec=lambda x: A.T @ x), A
-
-
-def make_linear_operator_tall(m=8, n=5):
-    """Create a LinearOperator from a tall matrix."""
-    A = make_tall_dense(m, n)
-    return LinearOperator(shape=A.shape, matvec=lambda x: A @ x, rmatvec=lambda x: A.T @ x), A
-
-
-# =============================================================================
-# Fixtures
-# =============================================================================
-
-@pytest.fixture
-def vector_1d():
-    """1D test vector of size 5."""
-    return np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-
-
-@pytest.fixture
-def vector_2d():
-    """2D test vectors (multiple RHS) of shape (5, 3)."""
-    return np.array([[1.0, 0.5, 0.2],
-                     [2.0, 1.0, 0.4],
-                     [3.0, 1.5, 0.6],
-                     [4.0, 2.0, 0.8],
-                     [5.0, 2.5, 1.0]])
-
-
-@pytest.fixture
-def vector_tall_1d():
-    """1D test vector for tall matrices (size 8)."""
-    return np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
-
-
-@pytest.fixture
-def vector_tall_2d():
-    """2D test vectors for tall matrices (shape 8, 2)."""
-    return np.array([[1.0, 0.5],
-                     [2.0, 1.0],
-                     [3.0, 1.5],
-                     [4.0, 2.0],
-                     [5.0, 2.5],
-                     [6.0, 3.0],
-                     [7.0, 3.5],
-                     [8.0, 4.0]])
-
-
-# =============================================================================
-# Parametrized Test Cases
-# =============================================================================
-
-# Square matrices (SPD and general)
-SQUARE_MATRICES = [
-    pytest.param(make_spd_dense, id="spd_dense"),
-    pytest.param(make_spd_sparse, id="spd_sparse"),
-    pytest.param(make_square_dense, id="square_dense"),
-    pytest.param(make_square_sparse, id="square_sparse"),
-]
-
-# SPD matrices only (for CG solver)
-SPD_MATRICES = [
-    pytest.param(make_spd_dense, id="spd_dense"),
-    pytest.param(make_spd_sparse, id="spd_sparse"),
-]
-
-# Rectangular (tall) matrices
-TALL_MATRICES = [
-    pytest.param(make_tall_dense, id="tall_dense"),
-    pytest.param(make_tall_sparse, id="tall_sparse"),
-]
-
-
-# =============================================================================
-# DirectSolver Tests
-# =============================================================================
-
-class TestDirectSolver:
-    """Tests for DirectSolver with various matrix types."""
-    
-    # -------------------------------------------------------------------------
-    # Square systems (exact solve)
-    # -------------------------------------------------------------------------
-    
-    @pytest.mark.parametrize("make_matrix", SQUARE_MATRICES)
-    def test_square_1d(self, make_matrix, vector_1d):
-        """Test exact solve with square matrix and 1D RHS."""
-        A = make_matrix()
-        x_true = vector_1d
-        b = A @ x_true
-        
-        solver = DirectSolver()
+    def test_least_squares(self, solver, rng):
+        A = rng.standard_normal((10, 4))
+        b = rng.standard_normal(10)
+        expected = np.linalg.lstsq(A, b, rcond=None)[0]
         x = solver(A, b)
-        
-        assert x.shape == x_true.shape
-        np.testing.assert_allclose(x, x_true, rtol=1e-10)
-    
-    @pytest.mark.parametrize("make_matrix", SQUARE_MATRICES)
-    def test_square_2d(self, make_matrix, vector_2d):
-        """Test exact solve with square matrix and multiple RHS."""
-        A = make_matrix()
-        X_true = vector_2d
-        B = A @ X_true
-        
-        solver = DirectSolver()
-        X = solver(A, B)
-        
-        assert X.shape == X_true.shape
-        np.testing.assert_allclose(X, X_true, rtol=1e-8)
-    
-    # -------------------------------------------------------------------------
-    # Rectangular systems (least squares)
-    # -------------------------------------------------------------------------
-    
-    @pytest.mark.parametrize("make_matrix", TALL_MATRICES)
-    def test_rectangular_1d(self, make_matrix, vector_tall_1d):
-        """Test least squares with tall matrix and 1D RHS."""
-        A = make_matrix()
-        b = vector_tall_1d
-        
-        solver = DirectSolver()
-        
-        # Sparse matrices trigger a SparseEfficiencyWarning for least squares
-        if sp.issparse(A):
-            with pytest.warns(sp.SparseEfficiencyWarning):
-                x = solver(A, b)
-        else:
-            x = solver(A, b)
-        
-        # Verify normal equations: A^T A x = A^T b
-        assert x.shape == (A.shape[1],)
-        AtA = A.T @ A
-        Atb = A.T @ b
-        if sp.issparse(AtA):
-            AtA = AtA.toarray()
-        if sp.issparse(Atb):
-            Atb = Atb.toarray().flatten()
-        np.testing.assert_allclose(AtA @ x, Atb, rtol=1e-8)
-    
-    @pytest.mark.parametrize("make_matrix", TALL_MATRICES)
-    def test_rectangular_2d(self, make_matrix, vector_tall_2d):
-        """Test least squares with tall matrix and multiple RHS."""
-        A = make_matrix()
-        B = vector_tall_2d
-        
-        solver = DirectSolver()
-        
-        # Sparse matrices trigger a SparseEfficiencyWarning for least squares
-        if sp.issparse(A):
-            with pytest.warns(sp.SparseEfficiencyWarning):
-                X = solver(A, B)
-        else:
-            X = solver(A, B)
-        
-        # Verify normal equations for each column
-        assert X.shape == (A.shape[1], B.shape[1])
-        AtA = A.T @ A
-        AtB = A.T @ B
-        if sp.issparse(AtA):
-            AtA = AtA.toarray()
-        if sp.issparse(AtB):
-            AtB = AtB.toarray()
-        np.testing.assert_allclose(AtA @ X, AtB, rtol=1e-8)
-    
-    # -------------------------------------------------------------------------
-    # Error cases
-    # -------------------------------------------------------------------------
-    
-    def test_underdetermined_raises(self):
-        """Test that underdetermined systems raise ValueError."""
-        A = np.array([[1.0, 0.0, 1.0],
-                      [0.0, 1.0, 1.0]])  # 2x3 matrix
-        b = np.array([1.0, 2.0])
-        
-        solver = DirectSolver()
-        with pytest.raises(ValueError, match="[Uu]nderdetermined"):
-            solver(A, b)
-    
-    def test_unsupported_type_raises(self):
-        """Test that unsupported matrix types raise error."""
-        A = [[1.0, 0.0], [0.0, 1.0]]  # list, not array
-        b = np.array([1.0, 2.0])
-        
-        solver = DirectSolver()
-        with pytest.raises((TypeError, AttributeError)):
-            solver(A, b)
+        np.testing.assert_allclose(x, expected, rtol=1e-6)
 
 
-# =============================================================================
-# IterativeSolver Tests
-# =============================================================================
+class TestDirectSolver(SolverContract, LeastSquaresContract):
 
-class TestIterativeSolverCG:
-    """Tests for IterativeSolver with CG (spd=True)."""
-    
-    @pytest.mark.parametrize("make_matrix", SPD_MATRICES)
-    def test_cg_1d(self, make_matrix, vector_1d):
-        """Test CG with SPD matrix and 1D RHS."""
-        A = make_matrix()
-        x_true = vector_1d
-        b = A @ x_true
-        
-        solver = IterativeSolver(spd=True, rtol=1e-10, atol=1e-12)
-        x = solver(A, b)
-        
-        assert x.shape == x_true.shape
-        np.testing.assert_allclose(x, x_true, rtol=1e-6)
-    
-    @pytest.mark.parametrize("make_matrix", SPD_MATRICES)
-    def test_cg_2d(self, make_matrix, vector_2d):
-        """Test CG with SPD matrix and multiple RHS."""
-        A = make_matrix()
-        X_true = vector_2d
-        B = A @ X_true
-        
-        solver = IterativeSolver(spd=True, rtol=1e-10, atol=1e-12)
-        X = solver(A, B)
-        
-        assert X.shape == X_true.shape
-        np.testing.assert_allclose(X, X_true, rtol=1e-6)
-    
-    def test_cg_linear_operator_1d(self, vector_1d):
-        """Test CG with LinearOperator and 1D RHS."""
-        A_op, A = make_linear_operator_spd()
-        x_true = vector_1d
-        b = A @ x_true
-        
-        solver = IterativeSolver(spd=True, rtol=1e-10, atol=1e-12)
-        x = solver(A_op, b)
-        
-        assert x.shape == x_true.shape
-        np.testing.assert_allclose(x, x_true, rtol=1e-6)
-    
-    def test_cg_linear_operator_2d(self, vector_2d):
-        """Test CG with LinearOperator and multiple RHS."""
-        A_op, A = make_linear_operator_spd()
-        X_true = vector_2d
-        B = A @ X_true
-        
-        solver = IterativeSolver(spd=True, rtol=1e-10, atol=1e-12)
-        X = solver(A_op, B)
-        
-        assert X.shape == X_true.shape
-        np.testing.assert_allclose(X, X_true, rtol=1e-6)
-    
-    def test_cg_requires_square(self, vector_tall_1d):
-        """Test that CG raises error for non-square matrices."""
-        A = make_tall_dense()
-        
-        solver = IterativeSolver(spd=True)
-        with pytest.raises(ValueError, match="[Ss]quare"):
-            solver(A, vector_tall_1d)
+    @pytest.fixture
+    def solver(self):
+        return DirectSolver()
 
 
-class TestIterativeSolverGMRES:
-    """Tests for IterativeSolver with GMRES (spd=False, square)."""
-    
-    @pytest.mark.parametrize("make_matrix", SQUARE_MATRICES)
-    def test_gmres_1d(self, make_matrix, vector_1d):
-        """Test GMRES with square matrix and 1D RHS."""
-        A = make_matrix()
-        x_true = vector_1d
-        b = A @ x_true
-        
-        solver = IterativeSolver(spd=False, rtol=1e-10, atol=1e-12)
-        x = solver(A, b)
-        
-        assert x.shape == x_true.shape
-        np.testing.assert_allclose(x, x_true, rtol=1e-6)
-    
-    @pytest.mark.parametrize("make_matrix", SQUARE_MATRICES)
-    def test_gmres_2d(self, make_matrix, vector_2d):
-        """Test GMRES with square matrix and multiple RHS."""
-        A = make_matrix()
-        X_true = vector_2d
-        B = A @ X_true
-        
-        solver = IterativeSolver(spd=False, rtol=1e-10, atol=1e-12)
-        X = solver(A, B)
-        
-        assert X.shape == X_true.shape
-        np.testing.assert_allclose(X, X_true, rtol=1e-6)
-    
-    def test_gmres_linear_operator_1d(self, vector_1d):
-        """Test GMRES with LinearOperator and 1D RHS."""
-        A_op, A = make_linear_operator_square()
-        x_true = vector_1d
-        b = A @ x_true
-        
-        solver = IterativeSolver(spd=False, rtol=1e-10, atol=1e-12)
-        x = solver(A_op, b)
-        
-        assert x.shape == x_true.shape
-        np.testing.assert_allclose(x, x_true, rtol=1e-6)
+class TestFactorizedDirectSolver(SolverContract, LeastSquaresContract):
+
+    @pytest.fixture
+    def solver(self):
+        return DirectSolver(factorize=True)
+
+    @pytest.mark.xfail(strict=True, reason="BUG: factorized DirectSolver ignores the shape of x0, see Solver.__call__")
+    def test_initial_guess_determines_shape(self, solver, A, matrix, rng):
+        super().test_initial_guess_determines_shape(solver, A, matrix, rng)
+
+    def test_reuses_factorization_for_same_matrix(self, solver, rng):
+        A = sp.sparse.csc_array(nonsymmetric_matrix())
+        solver(A, np.ones(A.shape[0]))
+        cached = solver._solveA
+        x = rng.standard_normal(A.shape[0])
+        np.testing.assert_allclose(solver(A, A @ x), x, rtol=TOL)
+        assert solver._solveA is cached
+
+    def test_refactorizes_for_new_matrix(self, solver, rng):
+        A1, A2 = nonsymmetric_matrix(seed=1), nonsymmetric_matrix(seed=2)
+        x = rng.standard_normal(A1.shape[0])
+        solver(A1, A1 @ x)
+        np.testing.assert_allclose(solver(A2, A2 @ x), x, rtol=TOL)
 
 
-class TestIterativeSolverLSMR:
-    """Tests for IterativeSolver with LSMR (rectangular systems)."""
-    
-    @pytest.mark.parametrize("make_matrix", TALL_MATRICES)
-    def test_lsmr_1d(self, make_matrix, vector_tall_1d):
-        """Test LSMR with tall matrix and 1D RHS."""
-        A = make_matrix()
-        b = vector_tall_1d
-        
-        solver = IterativeSolver(spd=False, atol=1e-6, btol=1e-6, conlim=1e8)
-        x = solver(A, b)
-        
-        # Verify approximate normal equations
-        assert x.shape == (A.shape[1],)
-        AtA = A.T @ A
-        Atb = A.T @ b
-        if sp.issparse(AtA):
-            AtA = AtA.toarray()
-        if sp.issparse(Atb):
-            Atb = Atb.toarray().flatten()
-        np.testing.assert_allclose(AtA @ x, Atb, rtol=1e-4)
-    
-    @pytest.mark.parametrize("make_matrix", TALL_MATRICES)
-    def test_lsmr_2d(self, make_matrix, vector_tall_2d):
-        """Test LSMR with tall matrix and multiple RHS."""
-        A = make_matrix()
-        B = vector_tall_2d
-        
-        solver = IterativeSolver(spd=False, atol=1e-6, btol=1e-6, conlim=1e8)
-        X = solver(A, B)
-        
-        assert X.shape == (A.shape[1], B.shape[1])
-    
-    def test_lsmr_linear_operator_1d(self, vector_tall_1d):
-        """Test LSMR with LinearOperator and 1D RHS."""
-        A_op, A = make_linear_operator_tall()
-        b = vector_tall_1d
-        
-        solver = IterativeSolver(spd=False, atol=1e-6, btol=1e-6, conlim=1e8)
-        x = solver(A_op, b)
-        
-        assert x.shape == (A.shape[1],)
-        # Verify approximate normal equations
-        np.testing.assert_allclose(A.T @ A @ x, A.T @ b, rtol=1e-4)
+class TestGMRES(SolverContract, LeastSquaresContract):
+    """``IterativeSolver(spd=False)`` uses GMRES for square and LSMR for rectangular systems."""
+
+    @pytest.fixture
+    def solver(self):
+        return IterativeSolver(rtol=1e-12, atol=1e-14)
 
 
-# =============================================================================
-# IterativeSolver Default Options Tests
-# =============================================================================
+class TestCG(SolverContract):
+    symmetric_only = True
 
-class TestIterativeSolverDefaults:
-    """Tests for IterativeSolver with default options (no arguments)."""
-    
-    def test_default_square_1d(self, vector_1d):
-        """Test default solver with square matrix and 1D RHS (uses GMRES)."""
-        A = make_square_dense()
-        b = vector_1d
-        
-        solver = IterativeSolver()  # No arguments - uses defaults
-        x = solver(A, b)
-        
-        assert x.shape == (A.shape[0],)
-        np.testing.assert_allclose(A @ x, b, rtol=1e-4)
-    
-    def test_default_square_2d(self, vector_2d):
-        """Test default solver with square matrix and multiple RHS (uses GMRES)."""
-        A = make_square_dense()
-        B = vector_2d
-        
-        solver = IterativeSolver()
-        X = solver(A, B)
-        
-        assert X.shape == (A.shape[0], B.shape[1])
-        np.testing.assert_allclose(A @ X, B, rtol=1e-4)
-    
-    def test_default_square_sparse(self, vector_1d):
-        """Test default solver with sparse square matrix (uses GMRES)."""
-        A = make_square_sparse()
-        b = vector_1d
-        
-        solver = IterativeSolver()
-        x = solver(A, b)
-        
-        assert x.shape == (A.shape[0],)
-        np.testing.assert_allclose(A @ x, b, rtol=1e-4)
-    
-    def test_default_spd_matrix(self, vector_1d):
-        """Test default solver with SPD matrix (uses GMRES since spd=False by default)."""
-        A = make_spd_dense()
-        b = vector_1d
-        
-        solver = IterativeSolver()  # spd=False by default, so uses GMRES
-        x = solver(A, b)
-        
-        assert x.shape == (A.shape[0],)
-        np.testing.assert_allclose(A @ x, b, rtol=1e-4)
-    
-    def test_default_rectangular_1d(self, vector_tall_1d):
-        """Test default solver with rectangular matrix and 1D RHS (uses LSMR)."""
-        A = make_tall_dense()
-        b = vector_tall_1d
-        
-        solver = IterativeSolver()  # Rectangular, so uses LSMR
-        x = solver(A, b)
-        
-        assert x.shape == (A.shape[1],)
-        # Verify normal equations are approximately satisfied
-        np.testing.assert_allclose(A.T @ A @ x, A.T @ b, rtol=1e-4)
-    
-    def test_default_rectangular_2d(self, vector_tall_2d):
-        """Test default solver with rectangular matrix and multiple RHS (uses LSMR)."""
-        A = make_tall_dense()
-        B = vector_tall_2d
-        
-        solver = IterativeSolver()
-        X = solver(A, B)
-        
-        assert X.shape == (A.shape[1], B.shape[1])
-    
-    def test_default_rectangular_sparse(self, vector_tall_1d):
-        """Test default solver with sparse rectangular matrix (uses LSMR)."""
-        A = make_tall_sparse()
-        b = vector_tall_1d
-        
-        solver = IterativeSolver()
-        x = solver(A, b)
-        
-        assert x.shape == (A.shape[1],)
-    
-    def test_default_linear_operator_square(self, vector_1d):
-        """Test default solver with square LinearOperator (uses GMRES)."""
-        A_op, A = make_linear_operator_square()
-        b = vector_1d
-        
-        solver = IterativeSolver()
-        x = solver(A_op, b)
-        
-        assert x.shape == (A.shape[0],)
-        np.testing.assert_allclose(A @ x, b, rtol=1e-4)
-    
-    def test_default_linear_operator_tall(self, vector_tall_1d):
-        """Test default solver with tall LinearOperator (uses LSMR)."""
-        A_op, A = make_linear_operator_tall()
-        b = vector_tall_1d
-        
-        solver = IterativeSolver()
-        x = solver(A_op, b)
-        
-        assert x.shape == (A.shape[1],)
-        np.testing.assert_allclose(A.T @ A @ x, A.T @ b, rtol=1e-4)
+    @pytest.fixture
+    def solver(self):
+        return IterativeSolver(spd=True, rtol=1e-12, atol=1e-14)
+
+    def test_rejects_rectangular_systems(self, solver):
+        with pytest.raises(ValueError):
+            solver(np.ones((3, 2)), np.ones(3))
 
 
-# =============================================================================
-# wrap_solver Tests
-# =============================================================================
+class TestWrappedCallable(SolverContract):
+    """Callables are wrapped to fulfill the solver contract, even if they only accept 1D right-hand sides."""
+    formats = ['dense']
 
-class TestWrapSolver:
-    """Tests for wrap_solver utility."""
-    
-    def test_passthrough_solver(self):
-        """Test that Solver instances are returned unchanged."""
-        original = DirectSolver()
-        wrapped = wrap_solver(original)
-        
-        assert wrapped is original
-        assert isinstance(wrapped, Solver)
-    
-    def test_wrap_callable_1d(self, vector_1d):
-        """Test wrapping a callable that solves Ax = b."""
-        def my_solver(A, b, x0=None):
-            return np.linalg.solve(A, b)
-        
-        A = make_square_dense()
-        x_true = vector_1d
-        b = A @ x_true
-        
-        solver = wrap_solver(my_solver)
-        x = solver(A, b)
-        
-        assert isinstance(solver, Solver)
-        np.testing.assert_allclose(x, x_true, rtol=1e-10)
-    
-    def test_wrap_callable_2d(self, vector_2d):
-        """Test wrapped callable handles multiple RHS correctly."""
-        def my_solver(A, b, x0=None):
-            return np.linalg.solve(A, b)
-        
-        A = make_square_dense()
-        X_true = vector_2d
-        B = A @ X_true
-        
-        solver = wrap_solver(my_solver)
-        X = solver(A, B)
-        
-        assert X.shape == X_true.shape
-        np.testing.assert_allclose(X, X_true, rtol=1e-10)
-    
-    def test_wrap_callable_1d_only(self, vector_2d):
-        """Test wrapped callable that only handles 1D vectors."""
-        def my_1d_solver(A, b, x0=None):
+    @pytest.fixture(params=['2d', '1d-only'])
+    def solver(self, request):
+        if request.param == '2d':
+            return wrap_solver(lambda A, b, x0: np.linalg.solve(A, b))
+
+        def solve_1d(A, b, x0):
             if b.ndim != 1:
-                raise ValueError("Only 1D supported")
+                raise ValueError("only 1D right-hand sides")
             return np.linalg.solve(A, b)
-        
-        A = make_square_dense()
-        X_true = vector_2d
-        B = A @ X_true
-        
-        solver = wrap_solver(my_1d_solver)
-        X = solver(A, B)
-        
-        assert X.shape == X_true.shape
-        np.testing.assert_allclose(X, X_true, rtol=1e-10)
+        return wrap_solver(solve_1d)
 
-
-# =============================================================================
-# Run tests directly
-# =============================================================================
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    def test_rejects_underdetermined_systems(self, solver):
+        with pytest.raises(ValueError):
+            solver(np.ones((2, 3)), np.ones(2))

@@ -15,3 +15,15 @@ include = ["ulmRBM*"]
 
 [tool.setuptools.package-dir]
 "" = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "slow: tests with noticeable runtime (e.g. greedy algorithms or SCM)",
+]
+filterwarnings = [
+    # efficiency warnings are expected when testing matrix-free / Kronecker formats with direct solvers
+    "ignore:Efficentcy warning:UserWarning",
+    "ignore:No solver specified; using default solver.:UserWarning",
+]
