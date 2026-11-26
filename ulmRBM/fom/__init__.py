@@ -34,7 +34,7 @@ Time-Stepping Models
 """
 
 from ._operators import *
-from ._basic import *
+from ._models import *
 from ._timestepping import *
 
 _submodules = [

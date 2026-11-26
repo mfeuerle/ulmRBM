@@ -1,3 +1,7 @@
+"""
+Empirical interpolation of parametric functions into FEniCSx function spaces.
+"""
+
 from collections.abc import Iterable, Callable
 from itertools import product
 

@@ -36,7 +36,7 @@ import pyvista as pv
 
 from ulmRBM.core import Mu
 from ulmRBM.affine import AffineObject, AffineLinear
-from ulmRBM.affine._affine import _ConstructNew
+from ulmRBM.affine._decomposition import _ConstructNew
 
 
 __all__ = [

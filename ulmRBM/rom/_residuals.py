@@ -1,3 +1,6 @@
+"""
+Evaluators for the dual norm of the full-order residual of reduced-order models.
+"""
 
 from __future__ import annotations
 

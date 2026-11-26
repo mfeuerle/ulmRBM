@@ -29,7 +29,7 @@ Utilities
     ScalarComponentList
 """
 
-from ._affine import *
+from ._decomposition import *
 from ._eim import *
 
 _submodules = [

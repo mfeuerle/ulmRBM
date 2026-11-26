@@ -22,7 +22,7 @@ from ulmRBM.fom import ParametricGalerkinOperator, TimeSteppingSolution, Station
 from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 
 from ._constants import StabilityEstimator, ContinuityEstimator
-from .__residual import TimeSteppingResidualNormEvaluator, FullTimeSteppingResidualNormEvaluator, AffineTimeSteppingResidualNormEvaluator
+from ._residuals import TimeSteppingResidualNormEvaluator, FullTimeSteppingResidualNormEvaluator, AffineTimeSteppingResidualNormEvaluator
 
     
 class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):

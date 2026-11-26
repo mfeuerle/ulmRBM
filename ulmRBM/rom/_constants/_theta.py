@@ -1,3 +1,7 @@
+"""
+Min/Max-theta estimators for stability and continuity constants.
+"""
+
 from __future__ import annotations
 
 __all__ = [
