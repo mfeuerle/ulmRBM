@@ -530,6 +530,14 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
         elif value[1].shape != self.shape:
             raise ValueError("Inserted data must have the same shape.")
         self._T = None  # Invalidate cached transpose
+        
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self._T = None  # Invalidate cached transpose
+        
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        self._T = None  # Invalidate cached transpose
 
         
     @property

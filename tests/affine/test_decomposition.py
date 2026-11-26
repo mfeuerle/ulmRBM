@@ -143,7 +143,6 @@ class TestAffineLinearArithmetic:
         assert_affine_equal(A.T, lambda mu: ref_A(mu).T)
         assert A.T is A.T  # cached
 
-    @pytest.mark.xfail(strict=True, reason="BUG: cached transpose is not invalidated by __setitem__/__delitem__")
     def test_transpose_after_modification(self, A_dense):
         _ = A_dense.T
         A_dense[0] = (1.0, np.zeros((4, 3)))
@@ -282,3 +281,10 @@ class TestScalarComponentList:
         components = ScalarComponentList(lambda mu: np.array([mu, mu**2]), 2)
         ad = AffineLinear(list(components), [np.ones(2), np.ones(2)])
         assert_affine_equal(ad, lambda mu: (mu + mu**2) * np.ones(2))
+
+
+def test_transpose_after_deletion():
+    A = AffineLinear([1.0, 2.0], [np.ones((2, 3)), np.eye(2, 3)])
+    _ = A.T
+    del A[1]
+    np.testing.assert_array_equal(A.T(None), np.ones((3, 2)))
