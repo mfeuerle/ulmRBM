@@ -183,7 +183,7 @@ def greedy_rbm(
             
         if np.isinf(err.max()):
             inf_mask = np.argwhere(np.isinf(err)).flatten()
-            idx = inf_mask[np.random.randint(0, len(inf_mask)-1)]
+            idx = inf_mask[np.random.randint(len(inf_mask))]
         else:
             idx = np.argmax(err)
         
@@ -476,7 +476,7 @@ def pod_greedy_rbm(
             
         if np.isinf(err.max()):
             inf_mask = np.argwhere(np.isinf(err)).flatten()
-            idx = inf_mask[np.random.randint(0, len(inf_mask)-1)]
+            idx = inf_mask[np.random.randint(len(inf_mask))]
         else:
             idx = np.argmax(err)
         
@@ -660,7 +660,7 @@ def primaldual_greedy_rbm(
     def _max_err_idx(err):
         if np.isinf(err.max()):
             inf_mask = np.argwhere(np.isinf(err)).flatten()
-            return inf_mask[np.random.randint(0, len(inf_mask)-1)]
+            return inf_mask[np.random.randint(len(inf_mask))]
         else:
             return np.argmax(err)
 

@@ -92,7 +92,6 @@ class TestGreedy:
         with pytest.raises(ValueError):
             greedy_rbm(make_rom(problem), TRAIN, N=2, strong=snapshots[:-1], display=False)
 
-    @pytest.mark.xfail(strict=True, raises=ValueError, reason="BUG: np.random.randint(0, len(inf_mask)-1) fails for a single infinite error (and never selects the last one)")
     def test_infinite_error_bound_is_selected(self, problem):
         class VanishingStability(ExactStability):
             def lower_bound(self, mu):
@@ -102,6 +101,19 @@ class TestGreedy:
         rom._fom_stability_estimator = VanishingStability(rom.fom)
         _, _, idx = greedy_rbm(rom, TRAIN, N=2, tol=0.0, display=False)
         assert idx[1] == 5
+
+    def test_all_infinite_error_bounds_can_be_selected(self, problem):
+        class VanishingStability(ExactStability):
+            def lower_bound(self, mu):
+                return 0.0 if np.allclose(mu, TRAIN[4]) or np.allclose(mu, TRAIN[5]) else super().lower_bound(mu)
+
+        selected = set()
+        np.random.seed(0)
+        for _ in range(20):
+            rom = make_rom(problem)
+            rom._fom_stability_estimator = VanishingStability(rom.fom)
+            selected.add(greedy_rbm(rom, TRAIN, N=2, tol=0.0, display=False)[2][1])
+        assert selected == {4, 5}
 
     def test_output_requires_functional(self, problem):
         rom = make_rom(problem)
