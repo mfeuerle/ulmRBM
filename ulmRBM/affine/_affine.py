@@ -334,10 +334,10 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
         >>> data = [1.0, 2.0]
         >>> ad = AffineObject(theta, data)
-        >>> ad2 = ad + 5.0
+        >>> ad2 = ad + [(5.0, 1.0)]
         >>> len(ad2)
         3
-        >>> ad2(1.0)  # 1*1 + 1*2 + 5 = 8
+        >>> ad2(1.0)  # 1*1 + 1*2 + 5*1 = 8
         8.0
         """
         if isinstance(other, AffineObject):
@@ -559,7 +559,7 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
             \theta_{q_1}(\mu) \cdot \theta_{q_2}(\mu) \cdot 
             \text{data}_{q_1} * \text{data}_{q_2}
         
-        If ``other`` is not an :class:`AffineDecomposition`, it applies
+        If ``other`` is not an :class:`AffineLinear`, it applies
         ``*``-multiplication to each data term:
         
         .. math::
@@ -575,12 +575,13 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
             
         Examples
         --------
+        >>> import numpy as np
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
-        >>> data = [2.0, 3.0]
+        >>> data = [np.array([2.0]), np.array([3.0])]
         >>> ad = AffineLinear(theta, data)
         >>> ad2 = ad * 2.0
         >>> ad2(1.0)  # (1*4.0) + (1*6.0) = 10.0
-        10.0
+        array([10.])
         """
         if isinstance(other, AffineLinear):
             new_theta = []
@@ -717,10 +718,10 @@ class AffineFunction(AffineObject[Mu,Callable]):
 def affine_kron(A: Matrix | AffineLinear[Mu, Matrix], B: Matrix | AffineLinear[Mu, Matrix], format: str | None = None) -> AffineLinear[Mu, Matrix]:
     r"""Kronecker product of two (possible affine) matrices.
 
-        Let :math:`A = \sum_i \theta_i^A(\mu) A_i \in \R^{m \times n}` and :math:`B = \sum_k \theta_k^B(\mu) B_k \in \R^{p \times q}` be two affine matrices. Then the Kronecker product is given by
+        Let :math:`A = \sum_i \theta_i^A(\mu) A_i \in \mathbb{R}^{m \times n}` and :math:`B = \sum_k \theta_k^B(\mu) B_k \in \mathbb{R}^{p \times q}` be two affine matrices. Then the Kronecker product is given by
         
         .. math::
-            A \otimes B = \sum_{i,k} \theta_i^A(\mu) \theta_k^B(\mu) (A_i \otimes B_k) \in \R^{mp \times nq},
+            A \otimes B = \sum_{i,k} \theta_i^A(\mu) \theta_k^B(\mu) (A_i \otimes B_k) \in \mathbb{R}^{mp \times nq},
             
         with
         

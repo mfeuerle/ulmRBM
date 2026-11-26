@@ -50,7 +50,7 @@ class Solver(ABC):
         Solve the linear system ``A x = b``.
         
         Args:
-            A : ``(m,n)`` vatrix, ``m>=n``
+            A : ``(m,n)`` matrix, ``m>=n``
             b : ``(m,)`` or ``(m,k)`` vector
             x0 : ``(n,)`` or ``(n,k)`` vector, optional
                 Initial guess for iterative solvers. Ignored by direct solvers.

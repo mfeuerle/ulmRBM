@@ -46,7 +46,7 @@ class ROM(FOM[Mu]):
     the corresponding approximation of the full-order solution, while :math:`s_N(\mu)\in\mathbb{R}^p` 
     are the output(s) of interest of the reduced solution. 
     
-    The reduced test space basis :math:`V_N(\mu)` is defined implicitly by a trail-to-test operator :math:`T(\mu)`, i.e. :math:`V_N(\mu) = T(\mu) U_N`. If the test space inner product is parameter independent, the default trial-to-test operator is given by the supremizing operator of the full-order model which will always lead to a stable reduced-order model.
+    The reduced test space basis :math:`V_N(\mu)` is defined implicitly by a trial-to-test operator :math:`T(\mu)`, i.e. :math:`V_N(\mu) = T(\mu) U_N`. If the test space inner product is parameter independent, the default trial-to-test operator is given by the supremizing operator of the full-order model which will always lead to a stable reduced-order model.
     """
     
     fom: Model[Mu]
@@ -325,9 +325,13 @@ class ROM(FOM[Mu]):
                 Reduced-order solution vector :math:`(N,)`. If ``None``, computed via :meth:`solve`.
             u_fom:
                 Full-order solution vector :math:`(n,)`. If ``None``, computed via :meth:`fom.solve`.
+            abs:
+                If ``True``, return the absolute error.
+            rel:
+                If ``True``, return the relative error :math:`\|u(\mu) - U_N u_N(\mu)\|_U / \|u(\mu)\|_U`.
         
         Returns:
-            True error :math:`\|u(\mu) - U_N u_N(\mu)\|_U`.
+            True error :math:`\|u(\mu) - U_N u_N(\mu)\|_U`, the relative error, or a tuple ``(abs, rel)`` of both, depending on the flags.
         """
         if not (abs or rel):
             raise ValueError("At least one of 'abs' or 'rel' must be True.")

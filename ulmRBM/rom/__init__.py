@@ -53,7 +53,7 @@ In general not online-efficient but usefull if the exact stability or continuity
     
 Min/Max-Theta Estimators
 ~~~~~~~~~~~~~~~~~~~~~~~~
-Online-efficient estimatators, under additional assumptions on the system matrices.
+Online-efficient estimators, under additional assumptions on the system matrices.
 
 .. autosummary::
     :toctree: generated/
@@ -63,7 +63,7 @@ Online-efficient estimatators, under additional assumptions on the system matric
     
 Successive Constraint Method (SCM)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Online-efficient estimatators.
+Online-efficient estimators.
 
 .. autosummary::
     :toctree: generated/

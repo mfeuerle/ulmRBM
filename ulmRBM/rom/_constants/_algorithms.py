@@ -1,5 +1,5 @@
 """
-Algorithms for building constant estimatators.
+Algorithms for building constant estimators.
 """
 
 from __future__ import annotations
