@@ -244,7 +244,7 @@ def pod_rbm(
     Returns
     ---------
     flag:
-        0 if tolerance reached, 1 if N reached
+        0 if tolerance reached, 1 if N reached (or the tolerance can not be reached, e.g. for ``tol <= 0``).
     err:
         ``err[i-1]`` is the avarage error over the training set of the POD-ROM using ``i`` basis vectors, with i ranging from 1 to the number of basis vectors added.
     err_full:
@@ -286,14 +286,16 @@ def pod_rbm(
     if display: print(f"{time.time() - start_time:6.1f}s: solving eigenvalue problem...")
     v, E = eigh(C)
     v = abs(v)
-    err = np.r_[0, np.sqrt(np.cumsum(v)), np.inf]
+    # err[k] is the error of the POD-ROM with k basis vectors, i.e. of the n-k discarded (smallest) eigenvalues
+    err = np.sqrt(np.r_[np.cumsum(v)[::-1], 0])
     
-    n = np.argmax(err[::-1] < tol)
+    below_tol = err < tol
+    n = np.argmax(below_tol) if np.any(below_tol) else N_train
     
     flag = 0
-    if n > N:
+    if n > N or not np.any(below_tol):
         flag = 1
-        n = N
+        n = min(n, N)
     
     if display: print(f"{time.time() - start_time:6.1f}s: extending rom by {n} basis vectors...")
     basis = 1/np.sqrt(v[-n:]) * (S.T @ E[:,-n:])
@@ -304,9 +306,9 @@ def pod_rbm(
     
     codes= {0: "tolerance reached", 1: "Nmax reached"}
     
-    if display: print(f"{time.time() - start_time:6.1f}s: finished ({codes[flag]}); added {n:3d}{f" (i.e. N={rom.shape[1]:3d})" if rom.shape[1] > n else ""} basis functions, avg. error={err[-n-1]:.2e}\n")
+    if display: print(f"{time.time() - start_time:6.1f}s: finished ({codes[flag]}); added {n:3d}{f" (i.e. N={rom.shape[1]:3d})" if rom.shape[1] > n else ""} basis functions, avg. error={err[n]:.2e}\n")
     
-    return flag, err[-n-1:-1][::-1], err[-2::-1]
+    return flag, err[1:n+1], err[1:]
 
 
 def pod_greedy_rbm(

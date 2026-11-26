@@ -134,14 +134,15 @@ class TestPOD:
         M = problem.MU
         E = S.T - P @ (P.T @ M @ S.T)
         rms = np.sqrt(np.mean(np.einsum('ik,ij,jk->k', E, M, E)))
-        np.testing.assert_allclose(err_full[4], rms, rtol=1e-6)
+        np.testing.assert_allclose(err_full[3], rms, rtol=1e-6)  # err_full[i-1] uses i basis vectors
+        np.testing.assert_array_equal(err, err_full[:4])
 
     @pytest.mark.parametrize("tol", [1e-1, 1e-3])
     def test_reaches_tolerance(self, problem, tol):
         rom = make_rom(problem)
         flag, err, err_full = pod_rbm(rom, TRAIN, N=problem.n, tol=tol, display=False)
         assert flag == 0
-        assert err_full[rom.shape[1]] < tol
+        assert err[-1] < tol
         assert len(err) == rom.shape[1]
 
     def test_maximum_basis_size(self, problem):
@@ -149,11 +150,10 @@ class TestPOD:
         flag, _, _ = pod_rbm(rom, TRAIN, N=2, tol=1e-14, display=False)
         assert flag == 1 and rom.shape[1] == 2
 
-    @pytest.mark.xfail(strict=True, reason="BUG: for tol <= 0 no POD mode is added, since np.argmax of an all-False array is 0")
     def test_zero_tolerance(self, problem):
         rom = make_rom(problem)
-        pod_rbm(rom, TRAIN, N=2, tol=0.0, display=False)
-        assert rom.shape[1] == 2
+        flag, _, _ = pod_rbm(rom, TRAIN, N=2, tol=0.0, display=False)
+        assert flag == 1 and rom.shape[1] == 2
 
     def test_rejects_parametric_inner_product(self, problem):
         from ulmRBM.products import MatrixInnerProduct
@@ -163,13 +163,15 @@ class TestPOD:
             pod_rbm(make_rom(problem), TRAIN, N=2, U=U, display=False)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: pod_rbm adds one POD mode more than needed for the tolerance")
 @pytest.mark.parametrize("tol", [1e-1, 1e-3])
 def test_pod_minimal_number_of_modes(tol):
+    """POD adds the smallest number of modes reaching the tolerance."""
     problem = StationaryProblem(n=12)
     rom = make_rom(problem)
     _, _, err_full = pod_rbm(rom, TRAIN, N=problem.n, tol=tol, display=False)
-    assert rom.shape[1] == np.argmax(err_full < tol)
+    n = rom.shape[1]
+    assert err_full[n - 1] < tol
+    assert n == 1 or err_full[n - 2] >= tol
 
 
 class TestPODGreedy:
