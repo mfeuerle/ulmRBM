@@ -414,10 +414,9 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         for theta_q, data_q in self:
             if isinstance(theta_q, TrivialParametric):
                 if theta_q.data == 0.0:
+                    # only needed if all terms are zero, then any data term with zero coefficient will do
                     if zero_data is None:
                         zero_data = data_q
-                    else:
-                        zero_data += data_q
                 else:
                     if constant_data is None:
                         constant_data = theta_q.data * data_q

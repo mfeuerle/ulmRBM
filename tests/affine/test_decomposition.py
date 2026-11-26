@@ -179,7 +179,6 @@ class TestCompress:
         AffineLinear([1.0, 1.0], data).compress()
         np.testing.assert_array_equal(data[0], np.ones(2))
 
-    @pytest.mark.xfail(strict=True, reason="BUG: compress adds zero-coefficient data terms in-place into the user's array")
     def test_does_not_modify_zero_input_data(self):
         data = [np.ones(2), np.ones(2)]
         AffineLinear([0.0, 0.0], data).compress()
