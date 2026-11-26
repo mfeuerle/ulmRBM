@@ -37,7 +37,7 @@ Additionally, `tests/test_scripts.py` runs every script in `scripts/` as a smoke
 pytest -m scripts
 ```
 
-Scripts using the modified Hilbert transform are skipped if Matlab is not available (or not licensed). On GitHub, the scripts run for each push to `main` and on manual dispatch, but not for pull requests.
+Scripts using the modified Hilbert transform are skipped if Matlab is not available (or not licensed). On GitHub, the scripts run monthly if `main` changed within the last month, and on manual dispatch (workflow *Run Scripts*).
 
 ## Package structure
 

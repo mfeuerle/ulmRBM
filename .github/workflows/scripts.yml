@@ -1,0 +1,59 @@
+name: Run Scripts
+
+# smoke tests of all scripts in scripts/ (several minutes), thus only monthly if main changed, or on manual dispatch
+on:
+  schedule:
+    - cron: "0 3 1 * *"  # 03:00 UTC on the first day of each month
+  workflow_dispatch:
+
+jobs:
+  # whether main got new commits since the last scheduled run
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for commits within the last month
+        id: check
+        run: |
+          if [ -n "$(git log -1 --since='1 month ago' --format=%H)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  test-scripts:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up headless display for pyvista
+        uses: pyvista/setup-headless-display-action@v3
+
+      - name: Set up micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: tests
+          environment-file: environment.yml
+          cache-environment: true
+          cache-environment-key: "env-${{ hashFiles('environment.yml') }}"
+          create-args: >-
+            python=3.12
+
+      - name: Run scripts
+        shell: bash -l {0}
+        # unbuffered, such that the log shows which script is running if the job gets terminated
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: pytest -v -rs -m scripts
