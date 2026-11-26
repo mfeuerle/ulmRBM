@@ -28,7 +28,7 @@ from ulmRBM.solver import Solver, DirectSolver, wrap_solver
 from ulmRBM.affine import AffineLinear, AffineFunction, wrap_affinelinear
 from ulmRBM.products import InnerProduct, MatrixInnerProduct
 
-from ._basic import FOM, GalerkinFOM
+from ._models import FOM, GalerkinFOM
 from ._operators import ParametricGalerkinOperator, ParametricOperator
 
     

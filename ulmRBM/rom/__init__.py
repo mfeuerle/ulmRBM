@@ -73,7 +73,7 @@ Online-efficient estimators.
 """
 
 from ._constants import *
-from ._rom import *
+from ._models import *
 from ._timestepping import *
 
 _submodules = [

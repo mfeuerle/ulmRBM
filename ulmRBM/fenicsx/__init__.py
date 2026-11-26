@@ -42,7 +42,7 @@ Empirical Interpolation Method (EIM)
     interpolate_function_eim
 """
 
-from ._basic import *
+from ._space import *
 from ._space_time import *
 from ._eim import *
 

@@ -1,3 +1,6 @@
+"""
+Reduced-order models obtained by (Petrov-)Galerkin projection of full-order models.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 from ulmRBM.affine import AffineLinear, wrap_affinelinear
 
 from ._constants import StabilityEstimator, ContinuityEstimator, ExactStability, ExactContinuity, EfficientConstantEstimator
-from .__residual import ResidualNormEvaluator, AffineResidualNormEvaluator, FullResidualNormEvaluator
+from ._residuals import ResidualNormEvaluator, AffineResidualNormEvaluator, FullResidualNormEvaluator
 
 class ROM(FOM[Mu]):
     r"""

@@ -1,3 +1,7 @@
+"""
+Dirichlet boundary conditions and assembly for (spatial) FEniCSx problems.
+"""
+
 import numpy as np
 from scipy.sparse import csr_array, sparray
 from dolfinx import fem
@@ -7,7 +11,7 @@ from ulmRBM.core import Mu
 from ulmRBM.affine import AffineObject, AffineLinear, wrap_affinelinear
 from ulmRBM.fenicsx import utils
 
-from ulmRBM.affine._affine import _ConstructNew
+from ulmRBM.affine._decomposition import _ConstructNew
 
 
 __all__ = [
