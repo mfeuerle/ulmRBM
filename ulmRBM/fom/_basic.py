@@ -214,17 +214,15 @@ class GalerkinFOM(Model[Mu], ParametricGalerkinOperator[Mu]):
             f:
                 See `Model`.
             U:
-                Inner product on the trial space.
-            V:
-                Inner product on the test space.
+                Inner product on the trial and test space.
             l:
                 See `Model`.
             stability, continuity:
-                See `ParametricOperator`.
+                See `ParametricGalerkinOperator`.
             solver:
                 See `Model`.
             supremizer:
-                See `ParametricOperator`.
+                See `ParametricGalerkinOperator`.
         """
         
         if isinstance(B, ParametricOperator):

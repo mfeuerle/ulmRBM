@@ -223,7 +223,7 @@ def pod_rbm(
     display: bool = True
 ) -> tuple[int, np.ndarray, np.ndarray]:
     """
-    Construct a reduced basis model using a greedy algorithm.
+    Construct a reduced basis model using the proper orthogonal decomposition (POD).
 
     Args:
         rom: 
@@ -346,7 +346,7 @@ def pod_greedy_rbm(
         update_LE_continuity:
             Whether to update the used continuity estimator for `StationaryTimeSteppingGalerkinFOM.LE` in each iteration using `ContinuityEstimator.update`. This is useful if the continuity estimator can not be setup seperately, e.g. using `greedy_constant_estimator`, or if the continuity estimator should be enhanced further.
         W:
-            Inner product used for the POD. If None, uses ``rom.fom.U`` if it is parameter-independent, otherwise the Euclidean inner product.
+            Inner product used for the POD. If None, uses ``rom.fom.W`` if it is parameter-independent, otherwise the Euclidean inner product.
         display:
             Whether to print information during the greedy procedure.
         eig:
@@ -519,19 +519,21 @@ def primaldual_greedy_rbm(
     callback: Callable[[ROM[Mu], Mu, Vector], None] | None = None
 ) -> tuple[int, np.ndarray, np.ndarray]:
     """
-    Construct a reduced basis model using a greedy algorithm.
+    Construct a primal-dual reduced basis model using a greedy algorithm.
+    
+    In each iteration, both the primal and the dual reduced model (``rom.dual``) are enriched. The algorithm stops if the (estimated) output error is below the tolerance.
 
     Args:
         rom: 
-            The reduced order model to enrich.
+            The primal-dual reduced order model to enrich, e.g. `PrimalDualROM` or `PrimalDualGalerkinROM`.
         mu_train: 
             Training set of parameter values.
         N: 
             Maximum number of iterations / of basis vectors to add (not maximum size of the reduced model, which is  ``rom.shape[1] + N``).
         tol: 
-            Error tolerance for stopping criterion.
+            Error tolerance of the output error for stopping criterion.
         strong: 
-            If True, use the true error (and thus compute the fom solutions for all parameters) (strong greedy). If False, use the online efficent error bound (weak greedy). Alternatively, provide the fom solutions to perform a strong greedy, in this case ``stong[i]`` should be the fom solution for ``mu_train[i]``.
+            If True, use the true error (and thus compute the primal and dual fom solutions for all parameters) (strong greedy). If False, use the online efficent error bound (weak greedy). Alternatively, provide a tuple ``(u_fom, z_fom)`` of primal and dual fom solutions to perform a strong greedy, in this case ``u_fom[i]`` and ``z_fom[i]`` should be the primal and dual fom solution for ``mu_train[i]``. If ``z_fom`` is ``None``, the dual solutions are computed.
         ortho: 
             If True, orthonormalize the basis after each enrichment. Alternatively, provide a `InnerProduct` or matrix compatible with `ROM.orthonormalize`, to orthonormalize the basis with respect to that product. Default is True.
         update_stability:
@@ -550,9 +552,9 @@ def primaldual_greedy_rbm(
     flag:
         0 if tolerance reached, 1 if N reached, 2 if training set exhausted.
     err:
-        ``err[i]`` is the maximum error over the training set at iteration ``i``. Note that the last entry might be ``np.nan``, if the error of the last iteration was not computed (e.g. if ``N`` is reached).
+        List ``[err_output, err_primal, err_dual]`` of arrays, where e.g. ``err_output[i]`` is the maximum output error over the training set at iteration ``i``. Note that the last entry of ``err_output`` might be ``np.nan``, if the error of the last iteration was not computed (e.g. if ``N`` is reached).
     idx: 
-        Array of selected parameter indices, i.e. ``mu_train[idx]`` gives the selected parameter values.
+        Array of parameter indices with the maximum output error in each iteration, i.e. ``mu_train[idx]`` gives the corresponding parameter values.
     """
     
     ########################

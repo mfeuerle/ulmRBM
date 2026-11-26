@@ -28,6 +28,8 @@ Time-Stepping Models
     
     TimeSteppingSolution
     StationaryTimeSteppingGalerkinFOM
+    DualStationaryTimeSteppingGalerkinFOM
+    PrimalDualStationaryTimeSteppingGalerkinFOM
     explicit_euler
     implicit_euler
     crank_nicolson

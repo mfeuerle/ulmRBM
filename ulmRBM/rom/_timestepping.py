@@ -1,5 +1,5 @@
 """
-Time-stepping (full-order) models for initial value problems.
+Time-stepping reduced-order models for initial value problems.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from .__residual import TimeSteppingResidualNormEvaluator, FullTimeSteppingResid
 class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     r"""Reduced-order model for time-stepping problems with a Galerkin operator and stationary operators.
     
-    This reduced-order model approximates the space :math:`W` in `StationaryTimeSteppingGalerkinFOM` by a low-dimensional subspace spanned :math:`W^N \subset W` spanned by :math:`W_{\text{basis}}`.
+    This reduced-order model approximates the space :math:`W` in `StationaryTimeSteppingGalerkinFOM` by a low-dimensional subspace :math:`W^N \subset W` spanned by :math:`W_{\text{basis}}`.
     """
     
     fom: StationaryTimeSteppingGalerkinFOM[Mu]
@@ -111,7 +111,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
             LE_continuity:
                 Continuity estimator for the explicit operator ``fom.LE``.
             solver:
-                Solver for the implicit operations. If ``None``, uses a direct solver with factorization.
+                Solver for the implicit operations. Defaults to a direct solver with factorization.
             residual: 
                 Method to evaluate the residual; takes values ``'affine'`` or ``'full'``.
                 Required for residual-based error bounds, see `error_bound`. The option ``'affine'`` is only applicable if the test space inner product is parameter independent. This method exploits the affine structure of the problem and thus is online-efficent. The option ``'full'`` is a fall back that delegates all calculations to the full-order model and is thus not online-efficient. If ``None``, defaults to ``'affine'`` if possible, otherwise ``'full'``.
@@ -292,7 +292,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
             Due to the square-root effect, the bounds are only accurate up to ``sqrt(eps)`` where ``eps`` is the machine precision. Thus, for smaller errors, the lower bounds might be wrong and the upper bounds might be overestimated.
             
         .. note::
-            As usula for time-stepping schemes, the error bound grows exponentially in the number of time steps with coefficient :math:`\frac{\sigma^I_{\text{LB}}(\mu)}{\gamma^E_{\text{UB}}(\mu)}`. Thus, for long time intervals, the error bound might be extremely pessimistic. 
+            As usual for time-stepping schemes, the error bound grows exponentially in the number of time steps with coefficient :math:`\frac{\gamma^E_{\text{UB}}(\mu)}{\sigma^I_{\text{LB}}(\mu)}`. Thus, for long time intervals, the error bound might be extremely pessimistic. 
         """
         if u is None: u = self.solve(mu)
         

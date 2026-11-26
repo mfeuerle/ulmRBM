@@ -8,7 +8,6 @@ Elliptic Problems
     weak_problem
     thermal_block
     simple_elliptic
-    thermal_block
     
 Heat Equation Problems
 ----------------------
@@ -25,7 +24,6 @@ Wave Equation Problems
 .. autosummary::
     :toctree: generated/
     
-    weak_problem
     wave_equation_structured
     wave_equation_hilbert
     simple_wave    

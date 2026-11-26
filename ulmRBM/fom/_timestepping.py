@@ -89,7 +89,7 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
     K: int
     """Number of time intervals, i.e. ``K+1`` time points."""
     l: AffineLinear[Mu, Vector]
-    """Affine decomposition of the output(s) of interest functional :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`. Might be ``None``, if no output of interest is given."""
+    r"""Affine decomposition of the output(s) of interest functional :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`. Might be ``None``, if no output of interest is given."""
     
     
     @property
@@ -231,7 +231,7 @@ class DualStationaryTimeSteppingGalerkinFOM():
             t:
                 Time points ``t_0, ..., t_K`` at which the solution is approximated.
             solver:
-                Solver for the linear system per time step. Defaults to `DirectSolver`.
+                Solver for the linear system per time step.
         """
         assert LI.shape == LE.shape
         assert LI.V is LE.V is LE.U is LI.U
@@ -290,15 +290,15 @@ class PrimalDualStationaryTimeSteppingGalerkinFOM(StationaryTimeSteppingGalerkin
             LE:
                 Explicit part of the time-stepping scheme, i.e. the operator applied to the solution at the current time step.
             b:
-                Inhomogeneity at each iteration, i.e. ``b(mu)`` has shape ``(n, 1)``.
+                Inhomogeneity at each iteration, i.e. ``b(mu)`` has shape ``(n, K)``, with ``b(mu)[:,k]`` being :math:`b_k(\mu)`.
             u0:
                 Initial value at ``t_0``.
             t:
                 Time points ``t_0, ..., t_K`` at which the solution is approximated.
             solver:
-                Solver for the linear system per time step. Defaults to `DirectSolver`.
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. Defaults to `DirectSolver`.
             l:
-                Affine decomposition of the output(s) of interest functional :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`. Might be ``None``, if no output of interest is given.
+                Affine decomposition of the output(s) of interest functional :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`. Required, as it defines the right-hand side of the dual problem.
         """
         assert l is not None
         try:
@@ -319,7 +319,7 @@ def explicit_euler(A: Matrix | AffineLinear[Mu, Matrix],
                    M: Matrix | AffineLinear[Mu, Matrix],
                    f: AffineFunction[Mu],
                    I: tuple[float, float],
-                   K: int) -> tuple[ParametricGalerkinOperator[Mu, Matrix], ParametricGalerkinOperator[Mu, Matrix], AffineLinear[Mu, Vector], np.ndarray[float]]:
+                   K: int) -> tuple[AffineLinear[Mu, Matrix], AffineLinear[Mu, Matrix], AffineLinear[Mu, Vector], np.ndarray[float]]:
     r"""Constructs time-stepping components for the explicit Euler scheme.
     
     For two Galerkin operators :math:`M(\mu), A(\mu) : W \to W'`, a right-hand side :math:`f(\mu) \in C(I;W')`, a initial value :math:`u_0(\mu) \in W` and a time-interval :math:`I = (t_0, t_K)`, consider the linear time-invariant initial value problem of finding :math:`u(\mu) \in C^1(I;W)` such that
