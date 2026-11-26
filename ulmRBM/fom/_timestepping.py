@@ -137,7 +137,7 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
         self.t = t
         self.W = LI.U
         self._solver = wrap_solver(solver if solver is not None else DirectSolver(factorize=True))
-        self.l = l
+        self.l = wrap_affinelinear(l) if l is not None else None
         
     def solve(self, mu: Mu) -> TimeSteppingSolution[Mu]:
         r"""Solve the time-stepping problem for a given parameter.

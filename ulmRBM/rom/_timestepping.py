@@ -43,7 +43,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     
     _W_basis: Vector | None = None
     
-    _need_assemble: bool
+    _need_assemble: bool = True
      
     @property
     def LI(self) -> ParametricGalerkinOperator[Mu, Matrix]:
@@ -82,6 +82,14 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     @u0.setter
     def u0(self, value: AffineLinear[Mu, Vector]):
         self._u0 = value
+        
+    @property
+    def l(self) -> AffineLinear[Mu, Vector] | None:
+        self.assemble()
+        return self._l
+    @l.setter
+    def l(self, value: AffineLinear[Mu, Vector] | None):
+        self._l = value
         
     @property
     def W_basis(self) -> Vector:
@@ -162,6 +170,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
             self.LI = W_basis.T @ self.fom.LI.B @ W_basis
             self.LE = W_basis.T @ self.fom.LE.B @ W_basis
             self.b = W_basis.T @ self.fom.b
+            self.l = self.fom.l @ W_basis if self.fom.l is not None else None
             
             if not self.fom.W.is_parametric:
                 # orthogonal projection of u0 onto W_basis w.r.t. the self.fom.W inner product if W is paramter-independent
@@ -180,6 +189,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
             self.LE = None
             self.b = None
             self.u0 = None
+            self.l = None
         
         
     def add_basis(self, basis: Vector):
