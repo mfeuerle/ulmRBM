@@ -28,6 +28,7 @@ Time-Stepping Models
     StationaryTimeSteppingGalerkinFOM
     DualStationaryTimeSteppingGalerkinFOM
     PrimalDualStationaryTimeSteppingGalerkinFOM
+    theta_scheme
     explicit_euler
     implicit_euler
     crank_nicolson

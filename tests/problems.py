@@ -24,6 +24,9 @@ from scipy.sparse.linalg import aslinearoperator
 from ulmRBM.affine import AffineLinear, AffineFunction
 from ulmRBM.products import MatrixInnerProduct
 
+SCHEME_THETA = {'explicit_euler': 0.0, 'implicit_euler': 1.0, 'crank_nicolson': 0.5, 'theta_scheme_0.3': 0.3}
+r"""Weight :math:`\vartheta` of the implicit part for the tested one-step schemes."""
+
 MATRIX_FORMATS = ['dense', 'sparse', 'linop']
 """Matrix representations every operator should support."""
 
@@ -207,10 +210,10 @@ class HeatProblem:
         return MatrixInnerProduct(self.M)
 
     def amplification(self, scheme: str, mu) -> np.ndarray:
+        """Amplification factor of the theta-scheme, see `SCHEME_THETA`."""
         dta = self.T / self.K * self.a(mu)
-        return {'explicit_euler': 1 - dta,
-                'implicit_euler': 1 / (1 + dta),
-                'crank_nicolson': (1 - dta / 2) / (1 + dta / 2)}[scheme]
+        theta = SCHEME_THETA[scheme]
+        return (1 - (1 - theta) * dta) / (1 + theta * dta)
 
     def discrete_solution(self, scheme: str, mu) -> np.ndarray:
         r = self.amplification(scheme, mu)
