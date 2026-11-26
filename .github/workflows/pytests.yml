@@ -2,7 +2,7 @@ name: Run Pytests
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/ci-sigterm]  # TEMPORARY: drop the branch before merging
   pull_request:
   workflow_dispatch:
 
