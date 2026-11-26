@@ -100,7 +100,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     def __init__(self, fom: StationaryTimeSteppingGalerkinFOM[Mu],
                  LI_stability: StabilityEstimator[Mu],
                  LE_continuity: ContinuityEstimator[Mu],
-                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver(factorize=True),
+                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None,
                  residual: None | str = None):
         r"""
         Args:
@@ -136,7 +136,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
         self.t = fom.t
         self._LI_stability_estimator  = LI_stability
         self._LE_continuity_estimator = LE_continuity
-        self._solver = solver
+        self._solver = solver if solver is not None else DirectSolver(factorize=True)
         
         if residual == 'affine':
             # self._residual_evaluator = AffineTimeSteppingResidualNormEvaluator(self)

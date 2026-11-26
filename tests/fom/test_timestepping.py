@@ -134,3 +134,12 @@ class TestPrimalDualStationaryTimeSteppingGalerkinFOM(TestStationaryTimeStepping
         fom = build_fom(heat_problem, scheme, l=wrap_affinelinear(heat_problem.l_vec))
         dual = DualStationaryTimeSteppingGalerkinFOM(fom.LI, fom.LE, heat_problem.l_vec, fom.t)
         dual.solve(1.0)
+
+
+def test_default_solvers_are_not_shared(heat_problem):
+    """Factorizing default solvers cache the factorized matrix, so they must not be shared between models."""
+    fom1 = build_fom(heat_problem, 'implicit_euler')
+    fom2 = build_fom(heat_problem, 'implicit_euler')
+    assert fom1._solver is not fom2._solver
+    pd = build_fom(heat_problem, 'implicit_euler', PrimalDualStationaryTimeSteppingGalerkinFOM, l=heat_problem.l_vec)
+    assert pd._solver is not pd.dual._solver

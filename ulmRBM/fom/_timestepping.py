@@ -107,7 +107,7 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
                  b: AffineLinear[Mu, Vector],
                  u0: AffineLinear[Mu, Vector],
                  t: np.ndarray[float],
-                 solver = DirectSolver(factorize=True),
+                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None,
                  l: AffineLinear[Mu, Vector] | None = None):
         r"""
         Args:
@@ -122,7 +122,7 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
             t:
                 Time points ``t_0, ..., t_K`` at which the solution is approximated.
             solver:
-                Solver for the linear system per time step. Defaults to `DirectSolver`.
+                Solver for the linear system per time step. Defaults to a factorizing `DirectSolver`.
             l:
                 Affine decomposition of the output(s) of interest functional :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`. Might be ``None``, if no output of interest is given.
         """
@@ -136,7 +136,7 @@ class StationaryTimeSteppingGalerkinFOM(Generic[Mu]):
         self.u0 = wrap_affinelinear(u0).compress()
         self.t = t
         self.W = LI.U
-        self._solver = wrap_solver(solver)
+        self._solver = wrap_solver(solver if solver is not None else DirectSolver(factorize=True))
         self.l = l
         
     def solve(self, mu: Mu) -> TimeSteppingSolution[Mu]:
@@ -281,7 +281,7 @@ class PrimalDualStationaryTimeSteppingGalerkinFOM(StationaryTimeSteppingGalerkin
                  b: AffineLinear[Mu, Vector],
                  u0: AffineLinear[Mu, Vector],
                  t: np.ndarray[float],
-                 solver = DirectSolver(factorize=True),
+                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None,
                  l: AffineLinear[Mu, Vector] | None = None):
         r"""
         Args:
@@ -296,11 +296,13 @@ class PrimalDualStationaryTimeSteppingGalerkinFOM(StationaryTimeSteppingGalerkin
             t:
                 Time points ``t_0, ..., t_K`` at which the solution is approximated.
             solver:
-                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. Defaults to `DirectSolver`.
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. Defaults to a factorizing `DirectSolver` for each model.
             l:
                 Affine decomposition of the output(s) of interest functional :math:`l(\mu) = \sum_{q=1}^{Q_l} \theta_q^l(\mu) l_q`. Required, as it defines the right-hand side of the dual problem.
         """
         assert l is not None
+        if solver is None:
+            solver = [None, None]
         try:
             solver = list(solver)
         except TypeError:
