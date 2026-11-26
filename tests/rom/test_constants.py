@@ -146,7 +146,6 @@ class TestThetaStability(OfflineEstimatorContract):
             np.testing.assert_allclose(estimator.lower_bound(mu), getattr(op, self.constant)(mu), rtol=1e-10)
             np.testing.assert_allclose(estimator.upper_bound(mu), getattr(op, self.constant)(mu), rtol=1e-10)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: sign check of the coefficients is never active (_positive_theta is never set)")
     def test_rejects_sign_changing_coefficients(self):
         B = AffineLinear([lambda mu: mu], [np.eye(2)])
         estimator = self.make(ParametricGalerkinOperator(B, EuclideanInnerProduct(2), stability='direct', continuity='direct'))

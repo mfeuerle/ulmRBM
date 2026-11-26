@@ -46,13 +46,15 @@ class _ThetaBase(EfficientConstantEstimator[Mu]):
     
     _get_exact_constant: Callable[[Mu], float]
     
-    _positive_theta: bool | None = None
+    _signs: np.ndarray | None = None
+    r"""Signs of the affine coefficients, fixed by the first evaluation."""
     
     def _initialize(self):
         if self.B.U.is_parametric or self.B.V.is_parametric:
             raise ValueError("Min/Max-Theta does not support parametric inner products. This could be extended to affine products, but was not done yet.")
         self._sigmas = None
         self._thetas = None
+        self._signs = None
     
     def _update(self, mu: Mu):
         if self._sigmas is None:
@@ -86,7 +88,7 @@ class _ThetaBase(EfficientConstantEstimator[Mu]):
             theta += np.triu(theta, k=1).T
             theta = theta[np.tril_indices(theta.shape[0])]
         
-        if self._positive_theta is None:
+        if self._signs is None:
             self._signs = np.sign(theta)
             
         if not np.all(self._signs == np.sign(theta)):
