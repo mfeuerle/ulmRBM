@@ -224,10 +224,10 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         if isinstance(key, int):
             if len(theta) != 1:
                 raise ValueError("When setting a single element, value must be a single (theta, data) tuple or AffineObject of length 1.")
-            self.theta[key] = theta[0]
+            self.theta[key] = wrap_scalar(theta[0])
             self.data[key] = data[0]
         else:                
-            self.theta[key] = theta
+            self.theta[key] = [wrap_scalar(t) for t in theta]
             self.data[key] = data
         
     def __delitem__(self, key: int | slice):
@@ -334,10 +334,10 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
         >>> data = [1.0, 2.0]
         >>> ad = AffineObject(theta, data)
-        >>> ad2 = ad + 5.0
+        >>> ad2 = ad + [(5.0, 1.0)]
         >>> len(ad2)
         3
-        >>> ad2(1.0)  # 1*1 + 1*2 + 5 = 8
+        >>> ad2(1.0)  # 1*1 + 1*2 + 5*1 = 8
         8.0
         """
         if isinstance(other, AffineObject):
@@ -414,10 +414,9 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         for theta_q, data_q in self:
             if isinstance(theta_q, TrivialParametric):
                 if theta_q.data == 0.0:
+                    # only needed if all terms are zero, then any data term with zero coefficient will do
                     if zero_data is None:
                         zero_data = data_q
-                    else:
-                        zero_data += data_q
                 else:
                     if constant_data is None:
                         constant_data = theta_q.data * data_q
@@ -530,6 +529,14 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
         elif value[1].shape != self.shape:
             raise ValueError("Inserted data must have the same shape.")
         self._T = None  # Invalidate cached transpose
+        
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self._T = None  # Invalidate cached transpose
+        
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        self._T = None  # Invalidate cached transpose
 
         
     @property
@@ -559,7 +566,7 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
             \theta_{q_1}(\mu) \cdot \theta_{q_2}(\mu) \cdot 
             \text{data}_{q_1} * \text{data}_{q_2}
         
-        If ``other`` is not an :class:`AffineDecomposition`, it applies
+        If ``other`` is not an :class:`AffineLinear`, it applies
         ``*``-multiplication to each data term:
         
         .. math::
@@ -575,12 +582,13 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
             
         Examples
         --------
+        >>> import numpy as np
         >>> theta = [lambda mu: mu, lambda mu: mu**2]
-        >>> data = [2.0, 3.0]
+        >>> data = [np.array([2.0]), np.array([3.0])]
         >>> ad = AffineLinear(theta, data)
         >>> ad2 = ad * 2.0
         >>> ad2(1.0)  # (1*4.0) + (1*6.0) = 10.0
-        10.0
+        array([10.])
         """
         if isinstance(other, AffineLinear):
             new_theta = []
@@ -717,10 +725,10 @@ class AffineFunction(AffineObject[Mu,Callable]):
 def affine_kron(A: Matrix | AffineLinear[Mu, Matrix], B: Matrix | AffineLinear[Mu, Matrix], format: str | None = None) -> AffineLinear[Mu, Matrix]:
     r"""Kronecker product of two (possible affine) matrices.
 
-        Let :math:`A = \sum_i \theta_i^A(\mu) A_i \in \R^{m \times n}` and :math:`B = \sum_k \theta_k^B(\mu) B_k \in \R^{p \times q}` be two affine matrices. Then the Kronecker product is given by
+        Let :math:`A = \sum_i \theta_i^A(\mu) A_i \in \mathbb{R}^{m \times n}` and :math:`B = \sum_k \theta_k^B(\mu) B_k \in \mathbb{R}^{p \times q}` be two affine matrices. Then the Kronecker product is given by
         
         .. math::
-            A \otimes B = \sum_{i,k} \theta_i^A(\mu) \theta_k^B(\mu) (A_i \otimes B_k) \in \R^{mp \times nq},
+            A \otimes B = \sum_{i,k} \theta_i^A(\mu) \theta_k^B(\mu) (A_i \otimes B_k) \in \mathbb{R}^{mp \times nq},
             
         with
         

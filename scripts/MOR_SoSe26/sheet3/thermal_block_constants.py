@@ -2,7 +2,7 @@ import numpy as np
 import time
 
 from ulmRBM.fenicsx import norms
-from ulmRBM.fenicsx.problems import thermal_block, assemble_system
+from ulmRBM.fenicsx.problems import thermal_block
 from ulmRBM.solver import DirectSolver
 from ulmRBM.fom import FOM, GalerkinFOM
 

@@ -5,7 +5,7 @@ import time
 
 from ulmRBM.core import NO_MU
 from ulmRBM.fenicsx import utils, norms
-from ulmRBM.fenicsx.problems import thermal_block, assemble_system
+from ulmRBM.fenicsx.problems import thermal_block
 from ulmRBM.solver import DirectSolver, IterativeSolver
 from ulmRBM.fom import GalerkinFOM, FOM
 from ulmRBM.rom import *
@@ -29,7 +29,6 @@ Nmax = 50
 #########################
 
 B, f, U, V = thermal_block(n_dofs, nblocks)
-B, f = assemble_system(B, f, U, V)
 
 print(f"System matrix shape: {B.shape}")
 print(f"Number of affine terms in B: {len(B)}")

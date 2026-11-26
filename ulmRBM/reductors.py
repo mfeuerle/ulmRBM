@@ -183,7 +183,7 @@ def greedy_rbm(
             
         if np.isinf(err.max()):
             inf_mask = np.argwhere(np.isinf(err)).flatten()
-            idx = inf_mask[np.random.randint(0, len(inf_mask)-1)]
+            idx = inf_mask[np.random.randint(len(inf_mask))]
         else:
             idx = np.argmax(err)
         
@@ -223,7 +223,7 @@ def pod_rbm(
     display: bool = True
 ) -> tuple[int, np.ndarray, np.ndarray]:
     """
-    Construct a reduced basis model using a greedy algorithm.
+    Construct a reduced basis model using the proper orthogonal decomposition (POD).
 
     Args:
         rom: 
@@ -244,7 +244,7 @@ def pod_rbm(
     Returns
     ---------
     flag:
-        0 if tolerance reached, 1 if N reached
+        0 if tolerance reached, 1 if N reached (or the tolerance can not be reached, e.g. for ``tol <= 0``).
     err:
         ``err[i-1]`` is the avarage error over the training set of the POD-ROM using ``i`` basis vectors, with i ranging from 1 to the number of basis vectors added.
     err_full:
@@ -286,14 +286,16 @@ def pod_rbm(
     if display: print(f"{time.time() - start_time:6.1f}s: solving eigenvalue problem...")
     v, E = eigh(C)
     v = abs(v)
-    err = np.r_[0, np.sqrt(np.cumsum(v)), np.inf]
+    # err[k] is the error of the POD-ROM with k basis vectors, i.e. of the n-k discarded (smallest) eigenvalues
+    err = np.sqrt(np.r_[np.cumsum(v)[::-1], 0])
     
-    n = np.argmax(err[::-1] < tol)
+    below_tol = err < tol
+    n = np.argmax(below_tol) if np.any(below_tol) else N_train
     
     flag = 0
-    if n > N:
+    if n > N or not np.any(below_tol):
         flag = 1
-        n = N
+        n = min(n, N)
     
     if display: print(f"{time.time() - start_time:6.1f}s: extending rom by {n} basis vectors...")
     basis = 1/np.sqrt(v[-n:]) * (S.T @ E[:,-n:])
@@ -304,9 +306,9 @@ def pod_rbm(
     
     codes= {0: "tolerance reached", 1: "Nmax reached"}
     
-    if display: print(f"{time.time() - start_time:6.1f}s: finished ({codes[flag]}); added {n:3d}{f" (i.e. N={rom.shape[1]:3d})" if rom.shape[1] > n else ""} basis functions, avg. error={err[-n-1]:.2e}\n")
+    if display: print(f"{time.time() - start_time:6.1f}s: finished ({codes[flag]}); added {n:3d}{f" (i.e. N={rom.shape[1]:3d})" if rom.shape[1] > n else ""} basis functions, avg. error={err[n]:.2e}\n")
     
-    return flag, err[-n-1:-1][::-1], err[-2::-1]
+    return flag, err[1:n+1], err[1:]
 
 
 def pod_greedy_rbm(
@@ -346,7 +348,7 @@ def pod_greedy_rbm(
         update_LE_continuity:
             Whether to update the used continuity estimator for `StationaryTimeSteppingGalerkinFOM.LE` in each iteration using `ContinuityEstimator.update`. This is useful if the continuity estimator can not be setup seperately, e.g. using `greedy_constant_estimator`, or if the continuity estimator should be enhanced further.
         W:
-            Inner product used for the POD. If None, uses ``rom.fom.U`` if it is parameter-independent, otherwise the Euclidean inner product.
+            Inner product used for the POD. If None, uses ``rom.fom.W`` if it is parameter-independent, otherwise the Euclidean inner product.
         display:
             Whether to print information during the greedy procedure.
         eig:
@@ -401,7 +403,7 @@ def pod_greedy_rbm(
     if isinstance(strong, bool):
         if display: opening_message(strong)
         if strong: 
-            print(f"{time.time() - start_time:6.1f}s: Computing {len(mu_train)} full solutions for strong POD-greedy...")
+            if display: print(f"{time.time() - start_time:6.1f}s: Computing {len(mu_train)} full solutions for strong POD-greedy...")
             u_fom = np.asarray([fom.solve(mu) for mu in mu_train], dtype=TimeSteppingSolution)
     else:
         if len(strong) != len(mu_train):
@@ -458,7 +460,7 @@ def pod_greedy_rbm(
     start = 0
     if rom.n == 0:
         start = 1
-        print(f"{time.time() - start_time:6.1f}s: Iteration {0:3d}:")
+        if display: print(f"{time.time() - start_time:6.1f}s: Iteration {0:3d}:")
         _perform_iteration(0, np.min([Npod, N]))
     
     ########################
@@ -468,7 +470,7 @@ def pod_greedy_rbm(
     n = start
     while n*Npod < N:
         
-        print(f"{time.time() - start_time:6.1f}s:\t computing errors for {len(mu_train)} parameters...")
+        if display: print(f"{time.time() - start_time:6.1f}s:\t computing errors for {len(mu_train)} parameters...")
         if strong:
             err = np.array([np.max(rom.error(mu, u_fom=u_mu)) for mu, u_mu in zip(mu_train, u_fom)])
         else:
@@ -476,7 +478,7 @@ def pod_greedy_rbm(
             
         if np.isinf(err.max()):
             inf_mask = np.argwhere(np.isinf(err)).flatten()
-            idx = inf_mask[np.random.randint(0, len(inf_mask)-1)]
+            idx = inf_mask[np.random.randint(len(inf_mask))]
         else:
             idx = np.argmax(err)
         
@@ -487,7 +489,7 @@ def pod_greedy_rbm(
             flag = 0
             break
         
-        print(f"{time.time() - start_time:6.1f}s: Iteration {n:3d}{f" (N={rom.n:3d})" if not start or Npod != 1 else ""}: max. error={err:.2e} at mu_train[{idx}]")
+        if display: print(f"{time.time() - start_time:6.1f}s: Iteration {n:3d}{f" (N={rom.n:3d})" if not start or Npod != 1 else ""}: max. error={err:.2e} at mu_train[{idx}]")
         _perform_iteration(idx, np.min([Npod, N - n*Npod]))
         n += 1
     
@@ -496,7 +498,7 @@ def pod_greedy_rbm(
     
     codes= {0: "tolerance reached", 1: "Nmax reached"}
     
-    print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.n:3d})" if not start or Npod != 1 else ""}: stopping due to {codes[flag]}, max. error={err:.2e}\n")
+    if display: print(f"{time.time() - start_time:6.1f}s: Iteration {len(selected_mu_idx):3d}{f" (N={rom.n:3d})" if not start or Npod != 1 else ""}: stopping due to {codes[flag]}, max. error={err:.2e}\n")
     
     if flag != 0:
         err_decay.append(np.nan)
@@ -519,19 +521,21 @@ def primaldual_greedy_rbm(
     callback: Callable[[ROM[Mu], Mu, Vector], None] | None = None
 ) -> tuple[int, np.ndarray, np.ndarray]:
     """
-    Construct a reduced basis model using a greedy algorithm.
+    Construct a primal-dual reduced basis model using a greedy algorithm.
+    
+    In each iteration, both the primal and the dual reduced model (``rom.dual``) are enriched. The algorithm stops if the (estimated) output error is below the tolerance.
 
     Args:
         rom: 
-            The reduced order model to enrich.
+            The primal-dual reduced order model to enrich, e.g. `PrimalDualROM` or `PrimalDualGalerkinROM`.
         mu_train: 
             Training set of parameter values.
         N: 
             Maximum number of iterations / of basis vectors to add (not maximum size of the reduced model, which is  ``rom.shape[1] + N``).
         tol: 
-            Error tolerance for stopping criterion.
+            Error tolerance of the output error for stopping criterion.
         strong: 
-            If True, use the true error (and thus compute the fom solutions for all parameters) (strong greedy). If False, use the online efficent error bound (weak greedy). Alternatively, provide the fom solutions to perform a strong greedy, in this case ``stong[i]`` should be the fom solution for ``mu_train[i]``.
+            If True, use the true error (and thus compute the primal and dual fom solutions for all parameters) (strong greedy). If False, use the online efficent error bound (weak greedy). Alternatively, provide a tuple ``(u_fom, z_fom)`` of primal and dual fom solutions to perform a strong greedy, in this case ``u_fom[i]`` and ``z_fom[i]`` should be the primal and dual fom solution for ``mu_train[i]``. If ``z_fom`` is ``None``, the dual solutions are computed.
         ortho: 
             If True, orthonormalize the basis after each enrichment. Alternatively, provide a `InnerProduct` or matrix compatible with `ROM.orthonormalize`, to orthonormalize the basis with respect to that product. Default is True.
         update_stability:
@@ -550,15 +554,18 @@ def primaldual_greedy_rbm(
     flag:
         0 if tolerance reached, 1 if N reached, 2 if training set exhausted.
     err:
-        ``err[i]`` is the maximum error over the training set at iteration ``i``. Note that the last entry might be ``np.nan``, if the error of the last iteration was not computed (e.g. if ``N`` is reached).
+        List ``[err_output, err_primal, err_dual]`` of arrays, where e.g. ``err_output[i]`` is the maximum output error over the training set at iteration ``i``. Note that the last entry of ``err_output`` might be ``np.nan``, if the error of the last iteration was not computed (e.g. if ``N`` is reached).
     idx: 
-        Array of selected parameter indices, i.e. ``mu_train[idx]`` gives the selected parameter values.
+        Array of parameter indices with the maximum output error in each iteration, i.e. ``mu_train[idx]`` gives the corresponding parameter values.
     """
     
     ########################
     # initialize
 
     n_disp_t = 3
+    
+    if mu_select_mode not in (0, 1):
+        raise ValueError(f"Invalid mu_select_mode {mu_select_mode}. Must be 0 (select by state errors) or 1 (select by output error).")
     
     start_time = time.time()
     
@@ -658,12 +665,13 @@ def primaldual_greedy_rbm(
     def _max_err_idx(err):
         if np.isinf(err.max()):
             inf_mask = np.argwhere(np.isinf(err)).flatten()
-            return inf_mask[np.random.randint(0, len(inf_mask)-1)]
+            return inf_mask[np.random.randint(len(inf_mask))]
         else:
             return np.argmax(err)
 
     
     flag = 1
+    err_out = np.nan  # in case no error is computed, e.g. for N=1 and an empty rom
     for n in range(start, N):
         
         if len(mu_train) == 0:
@@ -692,11 +700,9 @@ def primaldual_greedy_rbm(
         if mu_select_mode==0:
             selected_mu_idx.append(idx)
             selected_mu_idx_dual.append(idx_dual)
-        elif mu_select_mode==1:
+        else:
             selected_mu_idx.append(idx_out)
             selected_mu_idx_dual.append(idx_out)
-        else:
-            raise ValueError()
             
         err = err[idx]
         err_dual = err_dual[idx_dual]

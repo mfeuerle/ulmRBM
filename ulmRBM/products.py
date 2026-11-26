@@ -496,7 +496,7 @@ class OperatorInnerProduct(RestrictedInnerProduct[Mu]):
     Represents the inner product :math:`(u, v)_U = (Bu, Bv)_V` where :math:`B` is an
     operator and :math:`(\cdot, \cdot)_V` is an inner product on the range of :math:`B`.
     
-    This is implemented as a :class:`RestrictedInnerProduct` with basis :math:`B`, but the inverse inner product is computed via :math:`(u, v)_{U^{-1}} = u^T B^{-T} V^{-1} B^{-1} v` instead of :math:`u^T (B^TVB)^{-1} v`. This is usefull, if the inner product :math:`V` is expensive to compute, but :math:`V^{-1}` is cheap, e.g. if :math:`V` is a :class:`InverseInnerProduct`.
+    This is implemented as a :class:`RestrictedInnerProduct` with basis :math:`B`, but the inverse inner product is computed via :math:`(u, v)_{U^{-1}} = u^T B^{-1} V^{-1} B^{-T} v` instead of :math:`u^T (B^TVB)^{-1} v`. This is useful, if the inner product :math:`V` is expensive to compute, but :math:`V^{-1}` is cheap, e.g. if :math:`V` is a :class:`InverseInnerProduct`.
     """
     
     def __init__(self, 

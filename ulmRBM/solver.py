@@ -50,7 +50,7 @@ class Solver(ABC):
         Solve the linear system ``A x = b``.
         
         Args:
-            A : ``(m,n)`` vatrix, ``m>=n``
+            A : ``(m,n)`` matrix, ``m>=n``
             b : ``(m,)`` or ``(m,k)`` vector
             x0 : ``(n,)`` or ``(n,k)`` vector, optional
                 Initial guess for iterative solvers. Ignored by direct solvers.
@@ -117,7 +117,7 @@ class DirectSolver(Solver):
     def __call__(self, A: np.ndarray | sp.sparse.sparray, b: Vector, x0: Vector = None) -> Vector:
         if self.factorize:
             if self._A is A:
-                return self._solveA(b)
+                return self._solve_factorized(A, b, x0)
             else:
                 self._A = A
         
@@ -149,7 +149,7 @@ class DirectSolver(Solver):
                 Q, R = np.linalg.qr(A, mode='reduced')
                 self._solveA = lambda b: sp.linalg.solve_triangular(R, Q.T @ b, lower=False)
             
-            return self._solveA(b)
+            return self._solve_factorized(A, b, x0)
         
         else:
             if sp.sparse.issparse(A):
@@ -171,6 +171,10 @@ class DirectSolver(Solver):
                 raise TypeError("Matrix A must be a NumPy array or SciPy sparse array.")
             
             return _WrapCallableAsSolver(solver)(A, b, x0)  # mostly wrap it to handle multiple rhs correctly
+    
+    def _solve_factorized(self, A, b: Vector, x0: Vector = None) -> Vector:
+        # wrap it to handle the shape of x0 consistently with the other solvers
+        return _WrapCallableAsSolver(lambda A, b, x0: self._solveA(b))(A, b, x0)
 
 
 class IterativeSolver(Solver):

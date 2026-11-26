@@ -1,3 +1,7 @@
+"""
+Elliptic standard problems created with FEniCSx.
+"""
+
 import numpy as np
 import pyvista as pv
 from itertools import product

@@ -14,10 +14,8 @@ Standard Models
 .. autosummary::
     :toctree: generated/
     
-    Model
     FOM
     GalerkinFOM
-    PrimalDualModel
     PrimalDualFOM
     PrimalDualGalerkinFOM
     
@@ -28,13 +26,22 @@ Time-Stepping Models
     
     TimeSteppingSolution
     StationaryTimeSteppingGalerkinFOM
+    DualStationaryTimeSteppingGalerkinFOM
+    PrimalDualStationaryTimeSteppingGalerkinFOM
+
+Time-Stepping Iterations
+------------------------
+.. autosummary::
+    :toctree: generated/
+
+    theta_scheme
     explicit_euler
     implicit_euler
     crank_nicolson
 """
 
 from ._operators import *
-from ._basic import *
+from ._models import *
 from ._timestepping import *
 
 _submodules = [

@@ -1,5 +1,5 @@
 """
-Classes to estimate inf-sup, coercicity and continuity constants.
+Classes to estimate inf-sup, coercivity and continuity constants.
 """
 
 from ._interface import *

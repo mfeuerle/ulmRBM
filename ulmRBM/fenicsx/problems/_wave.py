@@ -1,3 +1,7 @@
+"""
+Wave equation standard problems created with FEniCSx.
+"""
+
 from collections.abc import Callable
 
 import numpy as np

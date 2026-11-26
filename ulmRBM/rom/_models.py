@@ -1,3 +1,6 @@
+"""
+Reduced-order models obtained by (Petrov-)Galerkin projection of full-order models.
+"""
 
 from __future__ import annotations
 
@@ -15,12 +18,21 @@ from warnings import warn
 
 from ulmRBM.core import Mu, Matrix, Vector
 from ulmRBM.solver import Solver, DirectSolver
-from ulmRBM.fom import Model, FOM, GalerkinFOM, PrimalDualModel, PrimalDualFOM
+from ulmRBM.fom import FOM, GalerkinFOM, PrimalDualFOM, PrimalDualGalerkinFOM
 from ulmRBM.products import InnerProduct, EuclideanInnerProduct, orthonormalize
 from ulmRBM.affine import AffineLinear, wrap_affinelinear
 
 from ._constants import StabilityEstimator, ContinuityEstimator, ExactStability, ExactContinuity, EfficientConstantEstimator
-from .__residual import ResidualNormEvaluator, AffineResidualNormEvaluator, FullResidualNormEvaluator
+from ._residuals import ResidualNormEvaluator, AffineResidualNormEvaluator, FullResidualNormEvaluator
+
+def _primal_dual_pair(value, message: str) -> list:
+    r"""Return ``[primal, dual]`` for a list of two values, otherwise use the single ``value`` for both."""
+    if isinstance(value, (list, tuple)):
+        if len(value) != 2:
+            raise ValueError(message)
+        return list(value)
+    return [value, value]
+
 
 class ROM(FOM[Mu]):
     r"""
@@ -46,10 +58,10 @@ class ROM(FOM[Mu]):
     the corresponding approximation of the full-order solution, while :math:`s_N(\mu)\in\mathbb{R}^p` 
     are the output(s) of interest of the reduced solution. 
     
-    The reduced test space basis :math:`V_N(\mu)` is defined implicitly by a trail-to-test operator :math:`T(\mu)`, i.e. :math:`V_N(\mu) = T(\mu) U_N`. If the test space inner product is parameter independent, the default trial-to-test operator is given by the supremizing operator of the full-order model which will always lead to a stable reduced-order model.
+    The reduced test space basis :math:`V_N(\mu)` is defined implicitly by a trial-to-test operator :math:`T(\mu)`, i.e. :math:`V_N(\mu) = T(\mu) U_N`. If the test space inner product is parameter independent, the default trial-to-test operator is given by the supremizing operator of the full-order model which will always lead to a stable reduced-order model.
     """
     
-    fom: Model[Mu]
+    fom: FOM[Mu] | GalerkinFOM[Mu]
     """Underlying full-order model."""
     U_basis: Vector | None
     """:math:`(n,N)` trial space basis matrix, where :math:`N` is the dimension of the reduced trial space."""
@@ -114,13 +126,13 @@ class ROM(FOM[Mu]):
         
     @property
     def shape(self):
-        return (0 if self.U_basis is None else self.U_basis.shape[1],
-                0 if self.V_basis is None else self.V_basis.shape[1],
+        return (0 if self.V_basis is None else self.V_basis.shape[1],
+                0 if self.U_basis is None else self.U_basis.shape[1],
                 self.fom.shape[2])
 
     
     def __init__(self, 
-                 fom: Model[Mu],
+                 fom: FOM[Mu] | GalerkinFOM[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
                  trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
@@ -238,7 +250,7 @@ class ROM(FOM[Mu]):
     
     def _add_basis_U(self, basis: Vector):
         if basis.ndim == 1: basis = basis.reshape(-1,1)
-        if basis.shape[0] != self.fom.shape[0]:
+        if basis.shape[0] != self.fom.U.shape[0]:
             raise ValueError("Basis vector has incompatible dimension.")
         if self.U_basis is None:
             self.U_basis = basis
@@ -250,7 +262,7 @@ class ROM(FOM[Mu]):
         basis = wrap_affinelinear(basis)
         if len(basis.shape) == 1: 
             basis = basis.apply2data(lambda dq: dq.reshape(-1,1))
-        if basis.shape[0] != self.fom.shape[0]:
+        if basis.shape[0] != self.fom.V.shape[0]:
             raise ValueError("Basis vector has incompatible dimension.")
         if self.V_basis is None:
             V_basis = basis
@@ -325,9 +337,13 @@ class ROM(FOM[Mu]):
                 Reduced-order solution vector :math:`(N,)`. If ``None``, computed via :meth:`solve`.
             u_fom:
                 Full-order solution vector :math:`(n,)`. If ``None``, computed via :meth:`fom.solve`.
+            abs:
+                If ``True``, return the absolute error.
+            rel:
+                If ``True``, return the relative error :math:`\|u(\mu) - U_N u_N(\mu)\|_U / \|u(\mu)\|_U`.
         
         Returns:
-            True error :math:`\|u(\mu) - U_N u_N(\mu)\|_U`.
+            True error :math:`\|u(\mu) - U_N u_N(\mu)\|_U`, the relative error, or a tuple ``(abs, rel)`` of both, depending on the flags.
         """
         if not (abs or rel):
             raise ValueError("At least one of 'abs' or 'rel' must be True.")
@@ -492,7 +508,7 @@ class GalerkinROM(GalerkinFOM[Mu], ROM[Mu]):
         self._orthonormalize_U(U)        
         
 class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
-    r"""Primal-dual reduced-order Petrov-Galerkin model given, see `ROM` and `PrimalDualModel`.
+    r"""Primal-dual reduced-order Petrov-Galerkin model given, see `ROM` and `PrimalDualFOM`.
     """
     
     dual: PrimalDualROM[Mu]
@@ -509,47 +525,34 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
         return self._B_mixed_private
     
     def __init__(self, 
-                 fom: PrimalDualModel[Mu],
+                 fom: PrimalDualFOM[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
                  primal_trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
                  dual_trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
-                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
-                 residual: list[None | str] = [None, None],
+                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = None,
+                 residual: list[None | str] | None | str = None,
                  _dual: PrimalDualROM[Mu] = None):
         r"""
         Args:
             fom:
                 Full-order model to reduce.
             stability:
-                Estimator for the primal and dual full-order stability constant (they coincide). See `ROM` and `PrimalDualModel` for details.
+                Estimator for the primal and dual full-order stability constant (they coincide). See `ROM` and `PrimalDualFOM` for details.
             continuity:
-                Estimator for the primal and dual full-order continuity constant (they coincide). See `ROM` and `PrimalDualModel` for details.
+                Estimator for the primal and dual full-order continuity constant (they coincide). See `ROM` and `PrimalDualFOM` for details.
             primal_trial2test:
-                Trial-to-Test operator for the primal model. See `ROM` and `PrimalDualModel` for details.
+                Trial-to-Test operator for the primal model. See `ROM` and `PrimalDualFOM` for details.
             dual_trial2test:
-                Trial-to-Test operator for the dual model. See `ROM` and `PrimalDualModel` for details.
+                Trial-to-Test operator for the dual model. See `ROM` and `PrimalDualFOM` for details.
             solver:
-                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `ROM` and `PrimalDualModel`.
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `ROM` and `PrimalDualFOM`.
             residual:
-                List of two residual evaluation methods. See `ROM` and `PrimalDualModel`.
+                List of two residual evaluation methods for the primal and dual model, respectively. Alternatively, a single method which is used for both models. See `ROM` and `PrimalDualFOM`.
         """
         
-        try:
-            solver = list(solver)
-        except TypeError:
-            solver = [solver, solver]
-            
-        try:
-            residual = list(residual)
-        except TypeError:
-            residual = [residual, residual]
-            
-        if len(solver) != 2:
-            raise ValueError("Solver must be a list of two solvers for primal and dual.")
-        
-        if len(residual) != 2:
-            raise ValueError("Residual must be a list of two residual evaluation methods for primal and dual.")
+        solver   = _primal_dual_pair(solver,   "Solver must be a list of two solvers for primal and dual.")
+        residual = _primal_dual_pair(residual, "Residual must be a list of two residual evaluation methods for primal and dual.")
         
         super().__init__(fom, stability, continuity, primal_trial2test, solver[0], residual[0])
         
@@ -569,9 +572,10 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
             self.dual._need_assemble_B_mixed = False
             if self.dual.U_basis is not None and self.U_basis is not None:
                 self._B_mixed_private = self.dual.U_basis.T @ self.fom.B @ self.U_basis
+                self.dual._B_mixed_private = self._B_mixed_private.T
             else:
                 self._B_mixed_private = None
-            self.dual._B_mixed_private = self._B_mixed_private.T
+                self.dual._B_mixed_private = None
                 
     def _mark_for_assembly(self, U: bool = False, V: bool = False):
         super()._mark_for_assembly(U, V)
@@ -602,48 +606,35 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
         
         
 class PrimalDualGalerkinROM(GalerkinROM[Mu], PrimalDualROM[Mu]):
-    r"""Primal-dual reduced-order Galerkin model given, see `GalerkinROM` and `PrimalDualModel`.
+    r"""Primal-dual reduced-order Galerkin model given, see `GalerkinROM` and `PrimalDualGalerkinFOM`.
     """
 
     dual: PrimalDualGalerkinROM[Mu]
     """Dual model."""
     
     def __init__(self, 
-                 fom: PrimalDualModel[Mu],
+                 fom: PrimalDualGalerkinFOM[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
-                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
-                 residual: list[None | str] = [None, None],
+                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = None,
+                 residual: list[None | str] | None | str = None,
                  _dual: PrimalDualGalerkinROM[Mu] = None):
         r"""
         Args:
             fom:
                 Full-order model to reduce.
             stability:
-                Estimator for the primal and dual full-order stability constant (they coincide). See `GalerkinROM` and `PrimalDualModel` for details.
+                Estimator for the primal and dual full-order stability constant (they coincide). See `GalerkinROM` and `PrimalDualGalerkinFOM` for details.
             continuity:
-                Estimator for the primal and dual full-order continuity constant (they coincide). See `GalerkinROM` and `PrimalDualModel` for details.
+                Estimator for the primal and dual full-order continuity constant (they coincide). See `GalerkinROM` and `PrimalDualGalerkinFOM` for details.
             solver:
-                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `GalerkinROM` and `PrimalDualModel`.
+                List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `GalerkinROM` and `PrimalDualGalerkinFOM`.
             residual:
-                List of two residual evaluation methods. See `GalerkinROM` and `PrimalDualModel`.
+                List of two residual evaluation methods for the primal and dual model, respectively. Alternatively, a single method which is used for both models. See `GalerkinROM` and `PrimalDualGalerkinFOM`.
         """
         
-        try:
-            solver = list(solver)
-        except TypeError:
-            solver = [solver, solver]
-            
-        try:
-            residual = list(residual)
-        except TypeError:
-            residual = [residual, residual]
-
-        if len(solver) != 2:
-            raise ValueError("Solver must be a list of two solvers for primal and dual.")
-        
-        if len(residual) != 2:
-            raise ValueError("Residual must be a list of two residual evaluation methods for primal and dual.")
+        solver   = _primal_dual_pair(solver,   "Solver must be a list of two solvers for primal and dual.")
+        residual = _primal_dual_pair(residual, "Residual must be a list of two residual evaluation methods for primal and dual.")
 
         super().__init__(fom, stability, continuity, solver[0], residual[0])
         

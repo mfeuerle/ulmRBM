@@ -1,3 +1,7 @@
+"""
+Dirichlet boundary conditions and assembly for space-time FEniCSx problems.
+"""
+
 from numbers import Number
 from collections.abc import Callable
 from enum import IntEnum
@@ -10,8 +14,8 @@ from ulmRBM.fenicsx import utils
 from ulmRBM.core import Mu, Matrix, Vector
 from ulmRBM.affine import AffineObject, AffineLinear, wrap_affinelinear, affine_kron
 
-from ulmRBM.affine._affine import _ConstructNew
-from ._basic import free_dofs
+from ulmRBM.affine._decomposition import _ConstructNew
+from ._space import free_dofs
 
 __all__ = [
     'SpaceTimeKey',
