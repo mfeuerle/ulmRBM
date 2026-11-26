@@ -289,7 +289,7 @@ class PrimalDualFOM(FOM[Mu], _PrimalDualModel[Mu]):
         r"""
         Args:
             B,f,U,V,l:
-                See `FOM`.
+                See `FOM`. The output functional ``l`` is required, as it defines the right-hand side of the dual model.
             stability:
                 Stability constant used for primal and dual model (as they coincide). See also `FOM`.
             continuity:
@@ -301,6 +301,9 @@ class PrimalDualFOM(FOM[Mu], _PrimalDualModel[Mu]):
             dual_supremizer:
                 Supremizer function for the dual model. See also `FOM`.
         """
+        
+        if l is None:
+            raise ValueError("Primal-dual models require an output functional l, as it defines the right-hand side of the dual model.")
         
         try:
             solver = list(solver)
@@ -339,7 +342,7 @@ class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualFOM[Mu]):
         r"""
         Args:
             B,f,U,l:
-                See `GalerkinFOM`.
+                See `GalerkinFOM`. The output functional ``l`` is required, as it defines the right-hand side of the dual model.
             stability:
                 Stability constant used for primal and dual model (as they coincide). See also `GalerkinFOM`.
             continuity:
@@ -351,6 +354,9 @@ class PrimalDualGalerkinFOM(GalerkinFOM[Mu], PrimalDualFOM[Mu]):
             dual_supremizer:
                 Supremizer function for the dual model. See also `GalerkinFOM`.
         """
+        
+        if l is None:
+            raise ValueError("Primal-dual models require an output functional l, as it defines the right-hand side of the dual model.")
         
         try:
             solver = list(solver)

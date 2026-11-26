@@ -121,7 +121,6 @@ class PrimalDualContract:
         with pytest.raises(ValueError):
             self.make(problem, solver=[DirectSolver()] * 3)
 
-    @pytest.mark.xfail(strict=True, raises=TypeError, reason="BUG: primal-dual models crash with an obscure TypeError if no output functional is given")
     def test_output_functional_is_required(self, problem):
         with pytest.raises(ValueError):
             self.make(problem, l=None)
