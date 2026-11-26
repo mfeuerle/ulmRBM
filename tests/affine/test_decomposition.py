@@ -82,7 +82,6 @@ class TestAffineObject:
         assert ad(None) == 14.0
         assert [d for _, d in ad] == [1.0, 2.0, 3.0]
 
-    @pytest.mark.xfail(strict=True, reason="BUG: __setitem__ does not wrap scalar coefficients (unlike __init__ and insert)")
     def test_setitem_wraps_scalars(self):
         ad = AffineObject([1.0], [1.0])
         ad[0] = (5.0, 10.0)

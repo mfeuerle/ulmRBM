@@ -224,10 +224,10 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         if isinstance(key, int):
             if len(theta) != 1:
                 raise ValueError("When setting a single element, value must be a single (theta, data) tuple or AffineObject of length 1.")
-            self.theta[key] = theta[0]
+            self.theta[key] = wrap_scalar(theta[0])
             self.data[key] = data[0]
         else:                
-            self.theta[key] = theta
+            self.theta[key] = [wrap_scalar(t) for t in theta]
             self.data[key] = data
         
     def __delitem__(self, key: int | slice):
