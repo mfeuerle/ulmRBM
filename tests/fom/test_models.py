@@ -121,7 +121,6 @@ class PrimalDualContract:
         with pytest.raises(ValueError):
             self.make(problem, solver=[DirectSolver()] * 3)
 
-    @pytest.mark.xfail(strict=True, raises=TypeError, reason="BUG: primal-dual models crash with an obscure TypeError if no output functional is given")
     def test_output_functional_is_required(self, problem):
         with pytest.raises(ValueError):
             self.make(problem, l=None)
@@ -184,10 +183,9 @@ class TestPrimalDualFOM(TestFOM, PrimalDualContract):
         model, _ = case
         assert type(model.dual) is FOM
 
-    @pytest.mark.xfail(strict=True, reason="BUG: PrimalDualFOM fails for a ParametricOperator as B (uses B.T of the operator)")
     def test_from_operator(self, problem):
         op = ParametricOperator(problem.B, problem.U, problem.V)
-        model = PrimalDualFOM(op, problem.f, l=problem.l)
+        model = PrimalDualFOM(op, problem.f, l=problem.l, solver=DirectSolver())
         mu = problem.mus()[0]
         np.testing.assert_allclose(model.dual.solve(mu), problem.dual_solution(mu), rtol=RTOL)
 
@@ -207,10 +205,9 @@ class TestPrimalDualGalerkinFOM(TestGalerkinFOM, PrimalDualContract):
         model, _ = case
         assert type(model.dual) is GalerkinFOM
 
-    @pytest.mark.xfail(strict=True, reason="BUG: PrimalDualGalerkinFOM fails for a ParametricGalerkinOperator as B (uses B.T of the operator)")
     def test_from_operator(self, problem):
         op = ParametricGalerkinOperator(problem.B, problem.U)
-        model = PrimalDualGalerkinFOM(op, problem.f, l=problem.l)
+        model = PrimalDualGalerkinFOM(op, problem.f, l=problem.l, solver=DirectSolver())
         mu = problem.mus()[0]
         np.testing.assert_allclose(model.dual.solve(mu), problem.dual_solution(mu), rtol=RTOL)
 

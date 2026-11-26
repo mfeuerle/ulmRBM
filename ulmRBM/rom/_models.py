@@ -25,6 +25,15 @@ from ulmRBM.affine import AffineLinear, wrap_affinelinear
 from ._constants import StabilityEstimator, ContinuityEstimator, ExactStability, ExactContinuity, EfficientConstantEstimator
 from ._residuals import ResidualNormEvaluator, AffineResidualNormEvaluator, FullResidualNormEvaluator
 
+def _primal_dual_pair(value, message: str) -> list:
+    r"""Return ``[primal, dual]`` for a list of two values, otherwise use the single ``value`` for both."""
+    if isinstance(value, (list, tuple)):
+        if len(value) != 2:
+            raise ValueError(message)
+        return list(value)
+    return [value, value]
+
+
 class ROM(FOM[Mu]):
     r"""
     Reduced-order model given by a Petrov-Galerkin projection of a full-order model.
@@ -117,8 +126,8 @@ class ROM(FOM[Mu]):
         
     @property
     def shape(self):
-        return (0 if self.U_basis is None else self.U_basis.shape[1],
-                0 if self.V_basis is None else self.V_basis.shape[1],
+        return (0 if self.V_basis is None else self.V_basis.shape[1],
+                0 if self.U_basis is None else self.U_basis.shape[1],
                 self.fom.shape[2])
 
     
@@ -241,7 +250,7 @@ class ROM(FOM[Mu]):
     
     def _add_basis_U(self, basis: Vector):
         if basis.ndim == 1: basis = basis.reshape(-1,1)
-        if basis.shape[0] != self.fom.shape[0]:
+        if basis.shape[0] != self.fom.U.shape[0]:
             raise ValueError("Basis vector has incompatible dimension.")
         if self.U_basis is None:
             self.U_basis = basis
@@ -253,7 +262,7 @@ class ROM(FOM[Mu]):
         basis = wrap_affinelinear(basis)
         if len(basis.shape) == 1: 
             basis = basis.apply2data(lambda dq: dq.reshape(-1,1))
-        if basis.shape[0] != self.fom.shape[0]:
+        if basis.shape[0] != self.fom.V.shape[0]:
             raise ValueError("Basis vector has incompatible dimension.")
         if self.V_basis is None:
             V_basis = basis
@@ -521,8 +530,8 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
                  continuity: ContinuityEstimator[Mu] = None,
                  primal_trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
                  dual_trial2test: Callable[[Vector], AffineLinear[Mu, Vector]] = None,
-                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
-                 residual: list[None | str] = [None, None],
+                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = None,
+                 residual: list[None | str] | None | str = None,
                  _dual: PrimalDualROM[Mu] = None):
         r"""
         Args:
@@ -539,24 +548,11 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
             solver:
                 List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `ROM` and `PrimalDualFOM`.
             residual:
-                List of two residual evaluation methods. See `ROM` and `PrimalDualFOM`.
+                List of two residual evaluation methods for the primal and dual model, respectively. Alternatively, a single method which is used for both models. See `ROM` and `PrimalDualFOM`.
         """
         
-        try:
-            solver = list(solver)
-        except TypeError:
-            solver = [solver, solver]
-            
-        try:
-            residual = list(residual)
-        except TypeError:
-            residual = [residual, residual]
-            
-        if len(solver) != 2:
-            raise ValueError("Solver must be a list of two solvers for primal and dual.")
-        
-        if len(residual) != 2:
-            raise ValueError("Residual must be a list of two residual evaluation methods for primal and dual.")
+        solver   = _primal_dual_pair(solver,   "Solver must be a list of two solvers for primal and dual.")
+        residual = _primal_dual_pair(residual, "Residual must be a list of two residual evaluation methods for primal and dual.")
         
         super().__init__(fom, stability, continuity, primal_trial2test, solver[0], residual[0])
         
@@ -576,9 +572,10 @@ class PrimalDualROM(ROM[Mu], PrimalDualFOM[Mu]):
             self.dual._need_assemble_B_mixed = False
             if self.dual.U_basis is not None and self.U_basis is not None:
                 self._B_mixed_private = self.dual.U_basis.T @ self.fom.B @ self.U_basis
+                self.dual._B_mixed_private = self._B_mixed_private.T
             else:
                 self._B_mixed_private = None
-            self.dual._B_mixed_private = self._B_mixed_private.T
+                self.dual._B_mixed_private = None
                 
     def _mark_for_assembly(self, U: bool = False, V: bool = False):
         super()._mark_for_assembly(U, V)
@@ -619,8 +616,8 @@ class PrimalDualGalerkinROM(GalerkinROM[Mu], PrimalDualROM[Mu]):
                  fom: PrimalDualGalerkinFOM[Mu],
                  stability: StabilityEstimator[Mu],
                  continuity: ContinuityEstimator[Mu] = None,
-                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = [None, None],
-                 residual: list[None | str] = [None, None],
+                 solver: list[Solver | Callable[[Matrix, Vector, Vector|None], Vector]] | Solver | Callable[[Matrix, Vector, Vector|None], Vector] = None,
+                 residual: list[None | str] | None | str = None,
                  _dual: PrimalDualGalerkinROM[Mu] = None):
         r"""
         Args:
@@ -633,24 +630,11 @@ class PrimalDualGalerkinROM(GalerkinROM[Mu], PrimalDualROM[Mu]):
             solver:
                 List of two solvers for the primal and dual model, respectively. Alternatively, a single solver which is used for both models. See also `GalerkinROM` and `PrimalDualGalerkinFOM`.
             residual:
-                List of two residual evaluation methods. See `GalerkinROM` and `PrimalDualGalerkinFOM`.
+                List of two residual evaluation methods for the primal and dual model, respectively. Alternatively, a single method which is used for both models. See `GalerkinROM` and `PrimalDualGalerkinFOM`.
         """
         
-        try:
-            solver = list(solver)
-        except TypeError:
-            solver = [solver, solver]
-            
-        try:
-            residual = list(residual)
-        except TypeError:
-            residual = [residual, residual]
-
-        if len(solver) != 2:
-            raise ValueError("Solver must be a list of two solvers for primal and dual.")
-        
-        if len(residual) != 2:
-            raise ValueError("Residual must be a list of two residual evaluation methods for primal and dual.")
+        solver   = _primal_dual_pair(solver,   "Solver must be a list of two solvers for primal and dual.")
+        residual = _primal_dual_pair(residual, "Residual must be a list of two residual evaluation methods for primal and dual.")
 
         super().__init__(fom, stability, continuity, solver[0], residual[0])
         

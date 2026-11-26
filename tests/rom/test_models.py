@@ -13,6 +13,7 @@ from ulmRBM.rom import ROM, GalerkinROM, PrimalDualROM, PrimalDualGalerkinROM, E
 from ulmRBM.solver import DirectSolver
 from ulmRBM.products import EuclideanInnerProduct
 from tests.problems import StationaryProblem, as_dense
+from ulmRBM.rom._residuals import AffineResidualNormEvaluator, FullResidualNormEvaluator
 
 SNAPSHOT_MUS = np.array([[0.5, 0.5], [2.0, 1.0], [1.0, 2.0]])
 TEST_MUS = np.array([[0.8, 1.3], [1.7, 0.6], [1.2, 1.9], [0.6, 1.6]])
@@ -217,21 +218,32 @@ class PrimalDualROMContract:
                         / problem.stability(mu))
             np.testing.assert_allclose(rom.output_error_bound(mu), expected, rtol=1e-8)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: a single residual method string is split into characters by list(residual)")
-    def test_single_residual_method(self, fom):
-        self.make_rom(fom, residual='full')
+    @pytest.mark.parametrize("method", ['affine', 'full'])
+    def test_single_residual_method(self, fom, method):
+        rom = self.make_rom(fom, residual=method)
+        assert type(rom._residual_evaluator) is type(rom.dual._residual_evaluator)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: the dual ROM is constructed with shifted positional arguments, so residual[1] is passed as list")
     @pytest.mark.parametrize("method", ['affine', 'full'])
     def test_residual_methods(self, fom, method):
-        rom = self.make_rom(fom, residual=[method, method])
-        assert isinstance(rom.dual._residual_evaluator, type(rom._residual_evaluator))
+        rom = self.make_rom(fom, residual=[method, 'full'])
+        assert isinstance(rom._residual_evaluator, {'affine': AffineResidualNormEvaluator, 'full': FullResidualNormEvaluator}[method])
+        assert isinstance(rom.dual._residual_evaluator, FullResidualNormEvaluator)
 
-    @pytest.mark.xfail(strict=True, raises=AttributeError, reason="BUG: assembling fails if only the primal (or dual) basis is set")
+    def test_invalid_number_of_residual_methods(self, fom):
+        with pytest.raises(ValueError):
+            self.make_rom(fom, residual=['full'] * 3)
+
     def test_assemble_with_primal_basis_only(self, fom, problem):
         rom = self.make_rom(fom)
         rom.add_basis(problem.solution(SNAPSHOT_MUS[0]))
         rom.assemble()
+        assert rom._B_mixed is None and rom.dual._B_mixed is None
+
+    def test_assemble_with_dual_basis_only(self, fom, problem):
+        rom = self.make_rom(fom)
+        rom.dual.add_basis(problem.dual_solution(SNAPSHOT_MUS[0]))
+        rom.assemble()
+        assert rom._B_mixed is None and rom.dual._B_mixed is None
 
 
 class TestROM(ROMContract):
@@ -246,13 +258,20 @@ class TestROM(ROMContract):
         rom.add_basis(self.snapshots(problem))
         np.testing.assert_allclose(rom.V_basis(None), rom.U_basis)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: ROM uses fom.shape[0] (test dimension) for the trial basis and swaps (m, n) in ROM.shape")
     def test_rectangular_fom(self):
         B = np.vstack([np.eye(3), np.ones((1, 3))])
         fom = FOM(B, np.ones(4), EuclideanInnerProduct(3), EuclideanInnerProduct(4), stability='direct', continuity='direct')
-        rom = ROM(fom, ExactStability(fom))
+        rom = ROM(fom, ExactStability(fom), trial2test=lambda basis: np.vstack([basis, np.zeros((1, basis.shape[1]))]))
         rom.add_basis(np.eye(3)[:, :2])
         assert rom.shape[:2] == (2, 2)
+        rom.add_basis(np.eye(3)[:, [2]])
+        assert rom.U_basis.shape == (3, 3) and rom.V_basis.shape == (4, 3)
+        with pytest.raises(ValueError):
+            rom.add_basis(np.ones(4))
+
+    def test_shape_follows_fom_convention(self, rom):
+        """Like ``FOM.shape``, ``ROM.shape`` is (test dimension, trial dimension, number of outputs)."""
+        assert rom.shape == (rom.V_basis.shape[1], rom.U_basis.shape[1], rom.fom.shape[2])
 
 
 class TestGalerkinROM(ROMContract):

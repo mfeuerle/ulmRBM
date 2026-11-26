@@ -224,10 +224,10 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         if isinstance(key, int):
             if len(theta) != 1:
                 raise ValueError("When setting a single element, value must be a single (theta, data) tuple or AffineObject of length 1.")
-            self.theta[key] = theta[0]
+            self.theta[key] = wrap_scalar(theta[0])
             self.data[key] = data[0]
         else:                
-            self.theta[key] = theta
+            self.theta[key] = [wrap_scalar(t) for t in theta]
             self.data[key] = data
         
     def __delitem__(self, key: int | slice):
@@ -414,10 +414,9 @@ class AffineObject(ParametricObject[Mu, Data], MutableSequence):
         for theta_q, data_q in self:
             if isinstance(theta_q, TrivialParametric):
                 if theta_q.data == 0.0:
+                    # only needed if all terms are zero, then any data term with zero coefficient will do
                     if zero_data is None:
                         zero_data = data_q
-                    else:
-                        zero_data += data_q
                 else:
                     if constant_data is None:
                         constant_data = theta_q.data * data_q
@@ -529,6 +528,14 @@ class AffineLinear(AffineObject[Mu, Data], ParametricLinear[Mu, Data]):
             self.shape = value[1].shape
         elif value[1].shape != self.shape:
             raise ValueError("Inserted data must have the same shape.")
+        self._T = None  # Invalidate cached transpose
+        
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self._T = None  # Invalidate cached transpose
+        
+    def __delitem__(self, key):
+        super().__delitem__(key)
         self._T = None  # Invalidate cached transpose
 
         

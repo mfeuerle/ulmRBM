@@ -92,10 +92,6 @@ class TestFactorizedDirectSolver(SolverContract, LeastSquaresContract):
     def solver(self):
         return DirectSolver(factorize=True)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: factorized DirectSolver ignores the shape of x0, see Solver.__call__")
-    def test_initial_guess_determines_shape(self, solver, A, matrix, rng):
-        super().test_initial_guess_determines_shape(solver, A, matrix, rng)
-
     def test_reuses_factorization_for_same_matrix(self, solver, rng):
         A = sp.sparse.csc_array(nonsymmetric_matrix())
         solver(A, np.ones(A.shape[0]))

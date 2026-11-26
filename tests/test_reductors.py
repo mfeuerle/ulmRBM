@@ -92,7 +92,6 @@ class TestGreedy:
         with pytest.raises(ValueError):
             greedy_rbm(make_rom(problem), TRAIN, N=2, strong=snapshots[:-1], display=False)
 
-    @pytest.mark.xfail(strict=True, raises=ValueError, reason="BUG: np.random.randint(0, len(inf_mask)-1) fails for a single infinite error (and never selects the last one)")
     def test_infinite_error_bound_is_selected(self, problem):
         class VanishingStability(ExactStability):
             def lower_bound(self, mu):
@@ -102,6 +101,19 @@ class TestGreedy:
         rom._fom_stability_estimator = VanishingStability(rom.fom)
         _, _, idx = greedy_rbm(rom, TRAIN, N=2, tol=0.0, display=False)
         assert idx[1] == 5
+
+    def test_all_infinite_error_bounds_can_be_selected(self, problem):
+        class VanishingStability(ExactStability):
+            def lower_bound(self, mu):
+                return 0.0 if np.allclose(mu, TRAIN[4]) or np.allclose(mu, TRAIN[5]) else super().lower_bound(mu)
+
+        selected = set()
+        np.random.seed(0)
+        for _ in range(20):
+            rom = make_rom(problem)
+            rom._fom_stability_estimator = VanishingStability(rom.fom)
+            selected.add(greedy_rbm(rom, TRAIN, N=2, tol=0.0, display=False)[2][1])
+        assert selected == {4, 5}
 
     def test_output_requires_functional(self, problem):
         rom = make_rom(problem)
@@ -122,14 +134,15 @@ class TestPOD:
         M = problem.MU
         E = S.T - P @ (P.T @ M @ S.T)
         rms = np.sqrt(np.mean(np.einsum('ik,ij,jk->k', E, M, E)))
-        np.testing.assert_allclose(err_full[4], rms, rtol=1e-6)
+        np.testing.assert_allclose(err_full[3], rms, rtol=1e-6)  # err_full[i-1] uses i basis vectors
+        np.testing.assert_array_equal(err, err_full[:4])
 
     @pytest.mark.parametrize("tol", [1e-1, 1e-3])
     def test_reaches_tolerance(self, problem, tol):
         rom = make_rom(problem)
         flag, err, err_full = pod_rbm(rom, TRAIN, N=problem.n, tol=tol, display=False)
         assert flag == 0
-        assert err_full[rom.shape[1]] < tol
+        assert err[-1] < tol
         assert len(err) == rom.shape[1]
 
     def test_maximum_basis_size(self, problem):
@@ -137,11 +150,10 @@ class TestPOD:
         flag, _, _ = pod_rbm(rom, TRAIN, N=2, tol=1e-14, display=False)
         assert flag == 1 and rom.shape[1] == 2
 
-    @pytest.mark.xfail(strict=True, reason="BUG: for tol <= 0 no POD mode is added, since np.argmax of an all-False array is 0")
     def test_zero_tolerance(self, problem):
         rom = make_rom(problem)
-        pod_rbm(rom, TRAIN, N=2, tol=0.0, display=False)
-        assert rom.shape[1] == 2
+        flag, _, _ = pod_rbm(rom, TRAIN, N=2, tol=0.0, display=False)
+        assert flag == 1 and rom.shape[1] == 2
 
     def test_rejects_parametric_inner_product(self, problem):
         from ulmRBM.products import MatrixInnerProduct
@@ -151,13 +163,15 @@ class TestPOD:
             pod_rbm(make_rom(problem), TRAIN, N=2, U=U, display=False)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: pod_rbm adds one POD mode more than needed for the tolerance")
 @pytest.mark.parametrize("tol", [1e-1, 1e-3])
 def test_pod_minimal_number_of_modes(tol):
+    """POD adds the smallest number of modes reaching the tolerance."""
     problem = StationaryProblem(n=12)
     rom = make_rom(problem)
     _, _, err_full = pod_rbm(rom, TRAIN, N=problem.n, tol=tol, display=False)
-    assert rom.shape[1] == np.argmax(err_full < tol)
+    n = rom.shape[1]
+    assert err_full[n - 1] < tol
+    assert n == 1 or err_full[n - 2] >= tol
 
 
 class TestPODGreedy:
@@ -212,3 +226,33 @@ class TestPrimalDualGreedy:
         mu = TRAIN[7]
         primal_only = rom._residual_evaluator.dual_norm(mu, rom.solve(mu)) * np.linalg.norm(rom.fom.l(mu)) / rom._fom_stability_estimator(mu)
         assert rom.output_error_bound(mu) < primal_only
+
+    def test_single_iteration_with_display(self, rom, capsys):
+        flag, (err_out, _, _), _ = primaldual_greedy_rbm(rom, TRAIN, N=1, tol=0.0, display=True)
+        assert flag == 1 and rom.shape[1] == rom.dual.shape[1] == 1
+        assert np.isnan(err_out[-1])
+        assert "Nmax reached" in capsys.readouterr().out
+
+    def test_invalid_mu_select_mode(self, rom):
+        with pytest.raises(ValueError, match="mu_select_mode"):
+            primaldual_greedy_rbm(rom, TRAIN, N=2, mu_select_mode=2, display=False)
+        assert rom.shape[1] == 0  # raised before any enrichment
+
+
+def _heat_rom():
+    heat = HeatProblem(n=10, K=10)
+    fom = build_fom(heat, 'implicit_euler', l=wrap_affinelinear(heat.l_vec))
+    return StationaryTimeSteppingGalerkinROM(fom, ExactStability(fom.LI), ExactContinuity(fom.LE), residual='full')
+
+
+@pytest.mark.parametrize("strong", [False, True], ids=['weak', 'strong'])
+@pytest.mark.parametrize("reductor", [
+    lambda strong: greedy_rbm(make_rom(StationaryProblem()), TRAIN, N=2, tol=0.0, strong=strong, display=False),
+    lambda strong: pod_rbm(make_rom(StationaryProblem()), TRAIN, N=2, display=False),
+    lambda strong: pod_greedy_rbm(_heat_rom(), np.linspace(0.5, 2, 4), N=2, tol=0.0, strong=strong, display=False),
+    lambda strong: primaldual_greedy_rbm(make_rom(StationaryProblem(), PrimalDualGalerkinFOM, PrimalDualGalerkinROM),
+                                         TRAIN, N=2, tol=0.0, strong=strong, display=False),
+], ids=['greedy', 'pod', 'pod_greedy', 'primaldual_greedy'])
+def test_display_false_prints_nothing(reductor, strong, capsys):
+    reductor(strong)
+    assert capsys.readouterr().out == ""

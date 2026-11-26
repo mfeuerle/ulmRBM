@@ -10,13 +10,14 @@ import pytest
 from ulmRBM.fom import (
     ParametricGalerkinOperator, TimeSteppingSolution,
     StationaryTimeSteppingGalerkinFOM, DualStationaryTimeSteppingGalerkinFOM, PrimalDualStationaryTimeSteppingGalerkinFOM,
-    explicit_euler, implicit_euler, crank_nicolson,
+    theta_scheme, explicit_euler, implicit_euler, crank_nicolson,
 )
 from ulmRBM.solver import DirectSolver
 from ulmRBM.affine import wrap_affinelinear
-from tests.problems import HeatProblem
+from tests.problems import HeatProblem, SCHEME_THETA
 
-SCHEMES = {'explicit_euler': explicit_euler, 'implicit_euler': implicit_euler, 'crank_nicolson': crank_nicolson}
+SCHEMES = {'explicit_euler': explicit_euler, 'implicit_euler': implicit_euler, 'crank_nicolson': crank_nicolson,
+           'theta_scheme_0.3': lambda *args: theta_scheme(*args, theta=SCHEME_THETA['theta_scheme_0.3'])}
 MUS = [0.5, 1.0, 2.0]
 
 
@@ -45,11 +46,32 @@ class TestSchemes:
         LI, LE, _, _ = SCHEMES[scheme](p.A, p.M, p.f, (0, p.T), p.K)
         dt, mu = p.T / p.K, 1.3
         A = p.A(mu)
-        weight = {'explicit_euler': (0, 1), 'implicit_euler': (1, 0), 'crank_nicolson': (0.5, 0.5)}[scheme]
-        np.testing.assert_allclose(LI(mu), p.M + weight[0] * dt * A, rtol=1e-12)
-        np.testing.assert_allclose(LE(mu), p.M - weight[1] * dt * A, rtol=1e-12)
+        theta = SCHEME_THETA[scheme]
+        np.testing.assert_allclose(LI(mu), p.M + theta * dt * A, rtol=1e-12)
+        np.testing.assert_allclose(LE(mu), p.M - (1 - theta) * dt * A, rtol=1e-12)
 
-    @pytest.mark.parametrize("scheme, order", [('explicit_euler', 1), ('implicit_euler', 1), ('crank_nicolson', 2)])
+    @pytest.mark.parametrize("alias, theta", [(explicit_euler, 0.0), (implicit_euler, 1.0), (crank_nicolson, 0.5)])
+    def test_aliases(self, heat_problem, alias, theta):
+        p, mu = heat_problem, 1.3
+        args = (p.A, p.M, p.f, (0, p.T), p.K)
+        for X, Y in zip(alias(*args)[:3], theta_scheme(*args, theta=theta)[:3]):
+            np.testing.assert_array_equal(X(mu), Y(mu))
+
+    def test_affine_terms_are_not_padded(self, heat_problem):
+        """Terms with zero weight are not added, e.g. the implicit operator of explicit Euler is the mass matrix only."""
+        p = heat_problem
+        LI, LE, _, _ = explicit_euler(p.A, p.M, p.f, (0, p.T), p.K)
+        assert len(LI) == 1
+        LI, LE, _, _ = implicit_euler(p.A, p.M, p.f, (0, p.T), p.K)
+        assert len(LE) == 1
+
+    @pytest.mark.parametrize("theta", [-0.1, 1.1])
+    def test_invalid_theta(self, heat_problem, theta):
+        p = heat_problem
+        with pytest.raises(ValueError):
+            theta_scheme(p.A, p.M, p.f, (0, p.T), p.K, theta)
+
+    @pytest.mark.parametrize("scheme, order", [('explicit_euler', 1), ('implicit_euler', 1), ('crank_nicolson', 2), ('theta_scheme_0.3', 1)])
     def test_convergence_order(self, scheme, order):
         errors = []
         for K in [40, 80, 160]:
@@ -130,8 +152,16 @@ class TestPrimalDualStationaryTimeSteppingGalerkinFOM(TestStationaryTimeStepping
         with pytest.raises(AssertionError):
             build_fom(heat_problem, scheme, PrimalDualStationaryTimeSteppingGalerkinFOM)
 
-    @pytest.mark.xfail(strict=True, raises=TypeError, reason="BUG: default solver of DualStationaryTimeSteppingGalerkinFOM is a list, which is not callable")
     def test_dual_default_solver(self, heat_problem, scheme):
         fom = build_fom(heat_problem, scheme, l=wrap_affinelinear(heat_problem.l_vec))
         dual = DualStationaryTimeSteppingGalerkinFOM(fom.LI, fom.LE, heat_problem.l_vec, fom.t)
         dual.solve(1.0)
+
+
+def test_default_solvers_are_not_shared(heat_problem):
+    """Factorizing default solvers cache the factorized matrix, so they must not be shared between models."""
+    fom1 = build_fom(heat_problem, 'implicit_euler')
+    fom2 = build_fom(heat_problem, 'implicit_euler')
+    assert fom1._solver is not fom2._solver
+    pd = build_fom(heat_problem, 'implicit_euler', PrimalDualStationaryTimeSteppingGalerkinFOM, l=heat_problem.l_vec)
+    assert pd._solver is not pd.dual._solver

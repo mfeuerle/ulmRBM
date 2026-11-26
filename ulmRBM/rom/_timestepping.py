@@ -43,7 +43,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     
     _W_basis: Vector | None = None
     
-    _need_assemble: bool
+    _need_assemble: bool = True
      
     @property
     def LI(self) -> ParametricGalerkinOperator[Mu, Matrix]:
@@ -52,7 +52,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     @LI.setter
     def LI(self, value: AffineLinear[Mu, Matrix]):
         if value is not None:
-            self._LI = ParametricGalerkinOperator(value, self.W, self._solver)
+            self._LI = ParametricGalerkinOperator(value, self.W)
         else:
             self._LI = None
         
@@ -84,6 +84,14 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
         self._u0 = value
         
     @property
+    def l(self) -> AffineLinear[Mu, Vector] | None:
+        self.assemble()
+        return self._l
+    @l.setter
+    def l(self, value: AffineLinear[Mu, Vector] | None):
+        self._l = value
+        
+    @property
     def W_basis(self) -> Vector:
         return self._W_basis
     @W_basis.setter
@@ -100,7 +108,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
     def __init__(self, fom: StationaryTimeSteppingGalerkinFOM[Mu],
                  LI_stability: StabilityEstimator[Mu],
                  LE_continuity: ContinuityEstimator[Mu],
-                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] = DirectSolver(factorize=True),
+                 solver: Solver | Callable[[Matrix, Vector, Vector|None], Vector] | None = None,
                  residual: None | str = None):
         r"""
         Args:
@@ -136,7 +144,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
         self.t = fom.t
         self._LI_stability_estimator  = LI_stability
         self._LE_continuity_estimator = LE_continuity
-        self._solver = solver
+        self._solver = solver if solver is not None else DirectSolver(factorize=True)
         
         if residual == 'affine':
             # self._residual_evaluator = AffineTimeSteppingResidualNormEvaluator(self)
@@ -162,6 +170,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
             self.LI = W_basis.T @ self.fom.LI.B @ W_basis
             self.LE = W_basis.T @ self.fom.LE.B @ W_basis
             self.b = W_basis.T @ self.fom.b
+            self.l = self.fom.l @ W_basis if self.fom.l is not None else None
             
             if not self.fom.W.is_parametric:
                 # orthogonal projection of u0 onto W_basis w.r.t. the self.fom.W inner product if W is paramter-independent
@@ -180,6 +189,7 @@ class StationaryTimeSteppingGalerkinROM(StationaryTimeSteppingGalerkinFOM[Mu]):
             self.LE = None
             self.b = None
             self.u0 = None
+            self.l = None
         
         
     def add_basis(self, basis: Vector):

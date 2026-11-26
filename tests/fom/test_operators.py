@@ -32,6 +32,13 @@ class OperatorContract:
         """Construct the object under test. Subclasses may override."""
         raise NotImplementedError
 
+    def make_seeded(self, problem, **kwargs):
+        """Like `make`, but with a fixed ARPACK start vector, since a random one rarely converges less accurate than the test tolerances."""
+        op = self.make(problem, **kwargs)
+        v0 = np.random.default_rng(0).standard_normal(problem.n)
+        op._eigsh_options_stability['v0'] = op._eigsh_options_continuity['v0'] = v0
+        return op
+
     @pytest.fixture
     def case(self, problem, fmt):
         problem.fmt = fmt
@@ -48,19 +55,19 @@ class OperatorContract:
     @pytest.mark.parametrize("method", ['direct', 'iterative'])
     def test_stability_exact(self, case, method):
         op, problem = case
-        op = self.make(problem, stability=method)
+        op = self.make_seeded(problem, stability=method)
         np.testing.assert_allclose(op.stability(MU), problem.stability(MU), rtol=RTOL)
 
     @pytest.mark.parametrize("method", ['direct', 'iterative'])
     def test_continuity_exact(self, case, method):
         op, problem = case
-        op = self.make(problem, continuity=method)
+        op = self.make_seeded(problem, continuity=method)
         np.testing.assert_allclose(op.continuity(MU), problem.continuity(MU), rtol=RTOL)
 
     @pytest.mark.parametrize("method", ['direct', 'iterative'])
     def test_eigenvectors(self, case, method):
         op, problem = case
-        op = self.make(problem, stability=method, continuity=method)
+        op = self.make_seeded(problem, stability=method, continuity=method)
         val, x = op.stability(MU, eigenvector=True)
         np.testing.assert_allclose(rayleigh_quotient(op, problem, MU, x), val, rtol=1e-6)
         val, x = op.continuity(MU, eigenvector=True)
